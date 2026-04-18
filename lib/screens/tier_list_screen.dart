@@ -115,7 +115,7 @@ class _TierListScreenState extends State<TierListScreen> {
                                       ),
                                       IconButton(
                                         icon: const Icon(Icons.delete, color: Colors.red),
-                                        onPressed: () => _confirmDelete(context, () => firestoreService.deleteTier(tier.id)),
+                                        onPressed: () => _handleDeleteTier(context, firestoreService, tier, transactions, payments),
                                       ),
                                     ],
                                   ),
@@ -154,6 +154,37 @@ class _TierListScreenState extends State<TierListScreen> {
         Text(value, style: TextStyle(color: valueColor, fontSize: 12, fontWeight: FontWeight.bold)),
       ],
     );
+  }
+
+  void _handleDeleteTier(BuildContext context, FirestoreService service, Tier tier, List<AppTransaction> transactions, List<Payment> payments) {
+    // Vérifier si le tiers a des transactions
+    final hasTransactions = transactions.any((t) => t.tierId == tier.id);
+    final hasPayments = payments.any((p) => p.tierId == tier.id);
+
+    if (hasTransactions || hasPayments) {
+      String reference = "";
+      if (hasTransactions) {
+        reference = "la Facture N°${transactions.firstWhere((t) => t.tierId == tier.id).invoiceNumber}";
+      } else {
+        reference = "un Règlement du ${DateFormat('dd/MM/yyyy').format(payments.firstWhere((p) => p.tierId == tier.id).date)}";
+      }
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text("Suppression impossible", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          content: Text("Le compte tiers '${tier.name}' est référencé dans $reference.\n\nVous ne pouvez pas supprimer ce tiers tant que ses documents liés existent."),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("OK"),
+            ),
+          ],
+        ),
+      );
+    } else {
+      _confirmDelete(context, () => service.deleteTier(tier.id));
+    }
   }
 
   void _confirmDelete(BuildContext context, VoidCallback onDelete) {

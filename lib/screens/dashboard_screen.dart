@@ -225,9 +225,9 @@ class DashboardContent extends StatelessWidget {
                                   crossAxisCount: isWeb ? 3 : 2,
                                   shrinkWrap: true,
                                   physics: const NeverScrollableScrollPhysics(),
-                                  crossAxisSpacing: 15,
-                                  mainAxisSpacing: 15,
-                                  childAspectRatio: isWeb ? 2.5 : 1.3,
+                                  crossAxisSpacing: 10,
+                                  mainAxisSpacing: 10,
+                                  childAspectRatio: isWeb ? 2.5 : 1.4,
                                   children: [
                                     GestureDetector(
                                       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransactionListScreen(type: TransactionType.sale))),
@@ -257,9 +257,9 @@ class DashboardContent extends StatelessWidget {
                                   crossAxisCount: isWeb ? 2 : 2,
                                   shrinkWrap: true,
                                   physics: const NeverScrollableScrollPhysics(),
-                                  crossAxisSpacing: 15,
-                                  mainAxisSpacing: 15,
-                                  childAspectRatio: isWeb ? 3.5 : 1.3,
+                                  crossAxisSpacing: 10,
+                                  mainAxisSpacing: 10,
+                                  childAspectRatio: isWeb ? 3.5 : 1.4,
                                   children: [
                                     GestureDetector(
                                       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransactionListScreen(type: TransactionType.purchase))),

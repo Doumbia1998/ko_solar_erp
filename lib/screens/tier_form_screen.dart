@@ -75,14 +75,21 @@ class _TierFormScreenState extends State<TierFormScreen> {
                           const SizedBox(height: 20),
                           DropdownButtonFormField<String>(
                             value: _accountNumber,
+                            isExpanded: true,
                             decoration: const InputDecoration(
                               labelText: 'Catégorie Générale',
                               prefixIcon: Icon(Icons.category),
                               border: OutlineInputBorder(),
                             ),
                             items: const [
-                              DropdownMenuItem(value: '41100000', child: Text('41100000 - Clients')),
-                              DropdownMenuItem(value: '40100000', child: Text('40100000 - Fournisseurs')),
+                              DropdownMenuItem(
+                                value: '41100000', 
+                                child: Text('41100000 - Clients', overflow: TextOverflow.ellipsis)
+                              ),
+                              DropdownMenuItem(
+                                value: '40100000', 
+                                child: Text('40100000 - Fournisseurs', overflow: TextOverflow.ellipsis)
+                              ),
                             ],
                             onChanged: (val) => setState(() => _accountNumber = val!),
                           ),
@@ -117,9 +124,36 @@ class _TierFormScreenState extends State<TierFormScreen> {
                     child: ElevatedButton(
                       onPressed: () async {
                         if (_formKey.currentState!.validate()) {
+                          final firestoreService = context.read<FirestoreService>();
+                          final newName = _nameController.text.trim().toUpperCase();
+
+                          // Vérification des doublons (uniquement pour les nouveaux tiers)
+                          if (widget.tier == null) {
+                            final allTiers = await firestoreService.getTiers(null).first;
+                            final alreadyExists = allTiers.any((t) => 
+                              t.name.trim().toUpperCase() == newName
+                            );
+
+                            if (alreadyExists) {
+                              if (mounted) {
+                                showDialog(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text("Doublon détecté", style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+                                    content: Text("Le nom '$newName' existe déjà dans la base de données (Client ou Fournisseur).\n\nVeuillez utiliser un nom différent ou modifier le tiers existant."),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK")),
+                                    ],
+                                  ),
+                                );
+                              }
+                              return; // Arrêter l'enregistrement
+                            }
+                          }
+
                           final tier = Tier(
                             id: widget.tier?.id ?? '',
-                            name: _nameController.text.toUpperCase(),
+                            name: newName,
                             phone: _phoneController.text,
                             address: _addressController.text,
                             type: _accountNumber == '41100000' ? TierType.client : TierType.supplier,
@@ -128,11 +162,11 @@ class _TierFormScreenState extends State<TierFormScreen> {
                           );
                           
                           if (widget.tier == null) {
-                            await context.read<FirestoreService>().addTier(tier);
+                            await firestoreService.addTier(tier);
                           } else {
-                            await context.read<FirestoreService>().updateTier(tier);
+                            await firestoreService.updateTier(tier);
                           }
-                          Navigator.pop(context);
+                          if (mounted) Navigator.pop(context);
                         }
                       },
                       style: ElevatedButton.styleFrom(
