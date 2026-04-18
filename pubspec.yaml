@@ -1,0 +1,53 @@
+name: ssf_erp
+description: "Projet ERP SSF - Flutter, Dart et Firebase"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  firebase_core: ^3.10.1
+  cloud_firestore: ^5.6.2
+  firebase_auth: ^5.4.1
+  firebase_storage: ^12.3.7
+  provider: ^6.1.2
+  intl: ^0.19.0
+  pdf: ^3.11.1
+  printing: ^5.13.2
+  excel: ^4.0.6
+  google_fonts: ^6.2.1
+  fl_chart: ^0.70.2
+  uuid: ^4.5.1
+  image_picker: ^1.1.2
+  shared_preferences: ^2.5.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.4.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/images/logo.png"
+  adaptive_icon_background: "#1A237E"
+  adaptive_icon_foreground: "assets/images/logo.png"
+
+flutter_native_splash:
+  color: "#1A237E"
+  image: "assets/images/logo.png"
+  android: true
+  ios: false
+  fullscreen: true

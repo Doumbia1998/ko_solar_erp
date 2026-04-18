@@ -1,0 +1,38 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+.idea/
+
+# IntelliJ
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Flutter/Dart
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/android/app/key.properties
+/android/app/src/main/res/values/strings.xml
+
+# Web
+node_modules/
+.web/
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+pubspec.lock

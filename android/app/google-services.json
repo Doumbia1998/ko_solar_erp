@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "191924732396",
+    "project_id": "ssf-erp",
+    "storage_bucket": "ssf-erp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:191924732396:android:2ad0df7556e27de38d80c9",
+        "android_client_info": {
+          "package_name": "com.example.ssf_erp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyASDDb1_WSi9quHJDJsA0rd2uFDpGUkxtg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
