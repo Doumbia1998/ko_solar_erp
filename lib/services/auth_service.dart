@@ -47,6 +47,14 @@ class AuthService {
     await _auth.signOut();
   }
 
+  Future<void> sendPasswordResetEmail(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+    } catch (e) {
+      throw Exception("Erreur lors de l'envoi de l'email de réinitialisation : $e");
+    }
+  }
+
   Future<void> registerNewUser({
     required String email,
     required String password,

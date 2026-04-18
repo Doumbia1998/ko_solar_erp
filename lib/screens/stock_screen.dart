@@ -28,90 +28,105 @@ class _StockScreenState extends State<StockScreen> {
         backgroundColor: const Color(0xFF1A237E),
         foregroundColor: Colors.white,
       ),
-      body: StreamBuilder<List<Product>>(
-        stream: firestoreService.getProducts(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-          
-          var products = snapshot.data ?? [];
-          if (_searchQuery.isNotEmpty) {
-            products = products.where((p) => p.name.toLowerCase().contains(_searchQuery)).toList();
-          }
+      body: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 1000),
+          child: StreamBuilder<List<Product>>(
+            stream: firestoreService.getProducts(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+              
+              var products = snapshot.data ?? [];
+              if (_searchQuery.isNotEmpty) {
+                products = products.where((p) => p.name.toLowerCase().contains(_searchQuery)).toList();
+              }
 
-          return StreamBuilder<List<StockTransfer>>(
-            stream: firestoreService.getStockTransfers(),
-            builder: (context, transferSnapshot) {
-              final allTransfers = transferSnapshot.data ?? [];
+              return StreamBuilder<List<StockTransfer>>(
+                stream: firestoreService.getStockTransfers(),
+                builder: (context, transferSnapshot) {
+                  final allTransfers = transferSnapshot.data ?? [];
 
-              return Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: TextField(
-                      onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
-                      decoration: InputDecoration(
-                        hintText: 'Rechercher un article...',
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  return Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: TextField(
+                          onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
+                          decoration: InputDecoration(
+                            hintText: 'Rechercher un article...',
+                            prefixIcon: const Icon(Icons.search),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            filled: true,
+                            fillColor: Colors.grey.shade50,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: products.length,
-                      itemBuilder: (context, index) {
-                        final product = products[index];
-                        
-                        // Filtrer les transferts pour ce produit spécifique en mémoire (très rapide)
-                        final productTransfers = allTransfers.where((t) => t.productId == product.id).toList();
-                        Set<String> depots = {"Dépôt Central"};
-                        for (var t in productTransfers) {
-                          depots.add(t.toWarehouseName);
-                        }
-
-                        return ListTile(
-                          title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('PU: ${product.sellingPrice} FCFA | Caté: ${product.category}'),
-                              Text('Lieux: ${depots.join(', ')}', 
-                                style: TextStyle(color: Colors.blue.shade900, fontWeight: FontWeight.bold, fontSize: 11)),
-                            ],
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text('${product.totalQuantity}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue)),
-                                  const Text('en stock', style: TextStyle(fontSize: 10)),
-                                ],
-                              ),
-                              if (!widget.isSelectionMode)
-                                IconButton(
-                                  icon: const Icon(Icons.edit, color: Colors.blue),
-                                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => ProductFormScreen(product: product))),
-                                ),
-                            ],
-                          ),
-                          onTap: () {
-                            if (widget.isSelectionMode) {
-                              Navigator.pop(context, product);
-                            } else {
-                              Navigator.push(context, MaterialPageRoute(builder: (context) => ProductDetailScreen(product: product)));
+                      Expanded(
+                        child: ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          itemCount: products.length,
+                          itemBuilder: (context, index) {
+                            final product = products[index];
+                            
+                            // Filtrer les transferts pour ce produit spécifique
+                            final productTransfers = allTransfers.where((t) => t.productId == product.id).toList();
+                            Set<String> depots = {"Dépôt Central"};
+                            for (var t in productTransfers) {
+                              depots.add(t.toWarehouseName);
                             }
+
+                            return Card(
+                              elevation: 2,
+                              margin: const EdgeInsets.only(bottom: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('PU: ${product.sellingPrice} FCFA | Caté: ${product.category}'),
+                                    Text('Lieux: ${depots.join(', ')}', 
+                                      style: TextStyle(color: Colors.blue.shade900, fontWeight: FontWeight.bold, fontSize: 11)),
+                                  ],
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Text('${product.totalQuantity}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.blue)),
+                                        const Text('en stock', style: TextStyle(fontSize: 10)),
+                                      ],
+                                    ),
+                                    if (!widget.isSelectionMode)
+                                      IconButton(
+                                        icon: const Icon(Icons.edit, color: Colors.blue),
+                                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => ProductFormScreen(product: product))),
+                                      ),
+                                    const Icon(Icons.chevron_right),
+                                  ],
+                                ),
+                                onTap: () {
+                                  if (widget.isSelectionMode) {
+                                    Navigator.pop(context, product);
+                                  } else {
+                                    Navigator.push(context, MaterialPageRoute(builder: (context) => ProductDetailScreen(product: product)));
+                                  }
+                                },
+                              ),
+                            );
                           },
-                        );
-                      },
-                    ),
-                  ),
-                ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
               );
             },
-          );
-        },
+          ),
+        ),
       ),
       floatingActionButton: widget.isSelectionMode ? null : Column(
         mainAxisAlignment: MainAxisAlignment.end,

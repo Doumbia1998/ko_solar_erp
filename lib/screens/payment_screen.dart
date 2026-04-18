@@ -21,6 +21,13 @@ class _PaymentScreenState extends State<PaymentScreen> with SingleTickerProvider
   DateTime? _startDate;
   DateTime? _endDate;
 
+  String _formatAmount(double amount) {
+    return amount.toInt().toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), 
+      (Match m) => '${m[1]} '
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -65,38 +72,43 @@ class _PaymentScreenState extends State<PaymentScreen> with SingleTickerProvider
           unselectedLabelColor: Colors.white70,
         ),
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Rechercher un tiers...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+      body: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Rechercher un tiers...',
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                  ),
+                  onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
+                ),
               ),
-              onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
-            ),
-          ),
-          if (_startDate != null && _endDate != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Text(
-                "Période: ${DateFormat('dd/MM/yy').format(_startDate!)} au ${DateFormat('dd/MM/yy').format(_endDate!)}",
-                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo),
+              if (_startDate != null && _endDate != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Text(
+                    "Période: ${DateFormat('dd/MM/yy').format(_startDate!)} au ${DateFormat('dd/MM/yy').format(_endDate!)}",
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo),
+                  ),
+                ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildPaymentList(firestoreService, TierType.client),
+                    _buildPaymentList(firestoreService, TierType.supplier),
+                  ],
+                ),
               ),
-            ),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildPaymentList(firestoreService, TierType.client),
-                _buildPaymentList(firestoreService, TierType.supplier),
-              ],
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -150,7 +162,7 @@ class _PaymentScreenState extends State<PaymentScreen> with SingleTickerProvider
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text("TOTAL RÈGLEMENTS", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  Text("${_currencyFormat.format(total)} FCFA", style: const TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold, fontSize: 18)),
+                  Text("${_formatAmount(total)} FCFA", style: const TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold, fontSize: 18)),
                 ],
               ),
             ),
@@ -158,37 +170,19 @@ class _PaymentScreenState extends State<PaymentScreen> with SingleTickerProvider
               child: list.isEmpty 
                 ? const Center(child: Text('Aucun règlement trouvé'))
                 : ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
                     itemCount: list.length,
                     itemBuilder: (context, index) {
                       final p = list[index];
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: type == TierType.client ? Colors.blue[100] : Colors.green[100],
-                          child: Icon(type == TierType.client ? Icons.arrow_downward : Icons.arrow_upward, 
-                                     color: type == TierType.client ? Colors.blue : Colors.green),
-                        ),
-                        title: Text(p.tierName.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('${DateFormat('dd/MM/yyyy').format(p.date)} - ${p.method}'),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text('${_currencyFormat.format(p.amount)} F', 
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                            IconButton(
-                              icon: Icon(
-                                Icons.account_balance, 
-                                color: p.isPosted ? Colors.grey : Colors.teal, 
-                                size: 20
-                              ),
-                              tooltip: p.isPosted ? 'Déjà comptabilisé' : 'Comptabiliser',
-                              onPressed: p.isPosted ? null : () => _transferPaymentToAccounting(context, service, p),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                              onPressed: () => _confirmDelete(context, () => service.deletePayment(p.id)),
-                            ),
-                          ],
-                        ),
+                      final isMobile = MediaQuery.of(context).size.width < 600;
+
+                      return Card(
+                        elevation: 2,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        child: isMobile 
+                          ? _buildMobilePaymentItem(p, type, service)
+                          : _buildDesktopPaymentItem(p, type, service),
                       );
                     },
                   ),
@@ -196,6 +190,128 @@ class _PaymentScreenState extends State<PaymentScreen> with SingleTickerProvider
           ],
         );
       },
+    );
+  }
+
+  Widget _buildDesktopPaymentItem(Payment p, TierType type, FirestoreService service) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: type == TierType.client ? Colors.blue.shade50 : Colors.green.shade50,
+          shape: BoxShape.circle
+        ),
+        child: Icon(
+          type == TierType.client ? Icons.arrow_downward : Icons.arrow_upward, 
+          color: type == TierType.client ? Colors.blue : Colors.green
+        ),
+      ),
+      title: Text(p.tierName.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('${p.method} - ${DateFormat('dd/MM/yyyy').format(p.date)}'),
+          if (p.createdBy.isNotEmpty)
+            Text('Fait par: ${p.createdBy}', style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.blueGrey)),
+          if (p.isPosted)
+            const Text('✅ Comptabilisé', style: TextStyle(color: Colors.teal, fontSize: 11, fontWeight: FontWeight.bold)),
+        ],
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '${_currencyFormat.format(p.amount)} F', 
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87)
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(Icons.print, color: Colors.blueGrey, size: 24),
+            tooltip: 'Imprimer le reçu',
+            onPressed: () => PdfService.generatePaymentReceipt(p),
+          ),
+          IconButton(
+            icon: Icon(
+              Icons.account_balance, 
+              color: p.isPosted ? Colors.grey : Colors.teal, 
+              size: 24
+            ),
+            tooltip: p.isPosted ? 'Déjà comptabilisé' : 'Comptabiliser',
+            onPressed: p.isPosted ? null : () => _transferPaymentToAccounting(context, service, p),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete, color: Colors.red, size: 22),
+            onPressed: () => _confirmDelete(context, () => service.deletePayment(p.id)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobilePaymentItem(Payment p, TierType type, FirestoreService service) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: type == TierType.client ? Colors.blue.shade50 : Colors.green.shade50,
+                  shape: BoxShape.circle
+                ),
+                child: Icon(
+                  type == TierType.client ? Icons.arrow_downward : Icons.arrow_upward, 
+                  color: type == TierType.client ? Colors.blue : Colors.green,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(p.tierName.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    Text('${p.method} - ${DateFormat('dd/MM/yy').format(p.date)}', style: const TextStyle(fontSize: 12)),
+                    if (p.createdBy.isNotEmpty)
+                      Text('Fait par: ${p.createdBy}', style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.blueGrey)),
+                  ],
+                ),
+              ),
+              Text(
+                '${_formatAmount(p.amount)} F',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
+              ),
+            ],
+          ),
+          if (p.isPosted)
+            const Padding(
+              padding: EdgeInsets.only(top: 4, left: 40),
+              child: Text('✅ Comptabilisé', style: TextStyle(color: Colors.teal, fontSize: 10, fontWeight: FontWeight.bold)),
+            ),
+          const Divider(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.print, color: Colors.blueGrey, size: 20),
+                onPressed: () => PdfService.generatePaymentReceipt(p),
+              ),
+              IconButton(
+                icon: Icon(Icons.account_balance, color: p.isPosted ? Colors.grey : Colors.teal, size: 20),
+                onPressed: p.isPosted ? null : () => _transferPaymentToAccounting(context, service, p),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                onPressed: () => _confirmDelete(context, () => service.deletePayment(p.id)),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

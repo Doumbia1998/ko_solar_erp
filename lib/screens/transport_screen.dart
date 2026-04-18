@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../services/firestore_service.dart';
+import '../services/auth_service.dart';
 import '../models/transport.dart';
 import '../models/tier.dart';
 import 'tier_list_screen.dart';
@@ -337,6 +338,9 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                       date: DateTime.now(),
                     );
 
+                    final authService = Provider.of<AuthService>(context, listen: false);
+                    final user = await authService.getAppUser((await authService.user.first)!.uid);
+
                     await service.addTrip(Trip(
                       id: '',
                       truck: selectedTruck!,
@@ -344,7 +348,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                       prestations: [initialPrestation],
                       expenses: [initialExpense],
                       isFinished: false,
-                    ));
+                    ), user?.displayName ?? 'Inconnu');
                     Navigator.pop(context);
                   },
                   child: const Text('Valider'),

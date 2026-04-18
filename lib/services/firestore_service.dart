@@ -92,10 +92,15 @@ class FirestoreService {
       return list;
     });
   }
-  Future<void> addTransaction(AppTransaction t) async {
+  Future<void> addTransaction(AppTransaction t, String userName) async {
     WriteBatch batch = _db.batch();
     DocumentReference ref = _db.collection('transactions').doc();
-    batch.set(ref, t.toMap());
+    
+    // Ajouter le créateur au map avant l'enregistrement
+    Map<String, dynamic> data = t.toMap();
+    data['createdBy'] = userName;
+    
+    batch.set(ref, data);
 
     // 1. Mise à jour du stock
     for (var item in t.items) {
@@ -146,6 +151,7 @@ class FirestoreService {
         'date': Timestamp.fromDate(t.date),
         'method': t.paymentMethod,
         'reference': 'Acompte ${t.invoiceNumber}',
+        'createdBy': userName,
       });
 
       // Écriture de l'acompte au journal (Caisse 571 contre Tiers 411/401)
@@ -241,7 +247,11 @@ class FirestoreService {
       return list;
     });
   }
-  Future<void> addTrip(Trip t) => _db.collection('trips').add(t.toMap());
+  Future<void> addTrip(Trip t, String userName) async {
+    Map<String, dynamic> data = t.toMap();
+    data['createdBy'] = userName;
+    await _db.collection('trips').add(data);
+  }
   Future<void> updateTrip(Trip t) => _db.collection('trips').doc(t.id).update(t.toMap());
   Future<void> deleteTrip(String id) => _db.collection('trips').doc(id).delete();
 
@@ -254,7 +264,11 @@ class FirestoreService {
       return list;
     });
   }
-  Future<void> addPayment(Payment p) => _db.collection('payments').add(p.toMap());
+  Future<void> addPayment(Payment p, String userName) async {
+    Map<String, dynamic> data = p.toMap();
+    data['createdBy'] = userName;
+    await _db.collection('payments').add(data);
+  }
   Future<void> deletePayment(String id) => _db.collection('payments').doc(id).delete();
 
   // --- DÉPÔTS ---

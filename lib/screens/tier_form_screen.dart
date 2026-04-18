@@ -39,80 +39,116 @@ class _TierFormScreenState extends State<TierFormScreen> {
         foregroundColor: Colors.black,
         elevation: 0,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            children: [
-              const Row(
+      body: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Form(
+              key: _formKey,
+              child: ListView(
                 children: [
-                  Icon(Icons.person, color: Color(0xFF1A237E)),
-                  SizedBox(width: 8),
-                  Text('Identité', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
-                ],
-              ),
-              const SizedBox(height: 20),
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Nom / Compte Tiers', border: UnderlineInputBorder()),
-                validator: (value) => value!.isEmpty ? 'Champ requis' : null,
-              ),
-              const SizedBox(height: 20),
-              DropdownButtonFormField<String>(
-                value: _accountNumber,
-                decoration: const InputDecoration(border: UnderlineInputBorder(), labelText: 'Compte Général'),
-                items: const [
-                  DropdownMenuItem(value: '41100000', child: Text('41100000 - Clients Divers')),
-                  DropdownMenuItem(value: '40100000', child: Text('40100000 - Fournisseurs')),
-                ],
-                onChanged: (val) => setState(() => _accountNumber = val!),
-              ),
-              const SizedBox(height: 20),
-              TextFormField(
-                controller: _compteComptableController,
-                decoration: const InputDecoration(labelText: 'Compte Comptable Spécifique', border: UnderlineInputBorder(), hintText: 'ex: 41110001'),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 20),
-              TextFormField(
-                controller: _phoneController,
-                decoration: const InputDecoration(labelText: 'Téléphone', border: UnderlineInputBorder()),
-                keyboardType: TextInputType.phone,
-              ),
-              const SizedBox(height: 40),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    if (_formKey.currentState!.validate()) {
-                      final tier = Tier(
-                        id: widget.tier?.id ?? '',
-                        name: _nameController.text,
-                        phone: _phoneController.text,
-                        address: _addressController.text,
-                        type: _accountNumber == '41100000' ? TierType.client : TierType.supplier,
-                        accountNumber: _accountNumber,
-                        compteComptable: _compteComptableController.text,
-                      );
-                      
-                      if (widget.tier == null) {
-                        await context.read<FirestoreService>().addTier(tier);
-                      } else {
-                        await context.read<FirestoreService>().updateTier(tier);
-                      }
-                      Navigator.pop(context);
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1A237E),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  const Row(
+                    children: [
+                      Icon(Icons.person, color: Color(0xFF1A237E)),
+                      SizedBox(width: 8),
+                      Text('IDENTITÉ DU TIERS', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E), letterSpacing: 1.2)),
+                    ],
                   ),
-                  child: Text(widget.tier == null ? 'VALIDER' : 'MODIFIER', style: const TextStyle(color: Colors.white)),
-                ),
+                  const SizedBox(height: 30),
+                  Card(
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(20.0),
+                      child: Column(
+                        children: [
+                          TextFormField(
+                            controller: _nameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Nom / Raison Sociale',
+                              prefixIcon: Icon(Icons.business),
+                              border: OutlineInputBorder(),
+                            ),
+                            validator: (value) => value!.isEmpty ? 'Champ requis' : null,
+                          ),
+                          const SizedBox(height: 20),
+                          DropdownButtonFormField<String>(
+                            value: _accountNumber,
+                            decoration: const InputDecoration(
+                              labelText: 'Catégorie Générale',
+                              prefixIcon: Icon(Icons.category),
+                              border: OutlineInputBorder(),
+                            ),
+                            items: const [
+                              DropdownMenuItem(value: '41100000', child: Text('41100000 - Clients')),
+                              DropdownMenuItem(value: '40100000', child: Text('40100000 - Fournisseurs')),
+                            ],
+                            onChanged: (val) => setState(() => _accountNumber = val!),
+                          ),
+                          const SizedBox(height: 20),
+                          TextFormField(
+                            controller: _compteComptableController,
+                            decoration: const InputDecoration(
+                              labelText: 'Sous-compte Comptable (ex: 41110001)',
+                              prefixIcon: Icon(Icons.account_tree),
+                              border: OutlineInputBorder(),
+                            ),
+                            keyboardType: TextInputType.number,
+                          ),
+                          const SizedBox(height: 20),
+                          TextFormField(
+                            controller: _phoneController,
+                            decoration: const InputDecoration(
+                              labelText: 'Téléphone',
+                              prefixIcon: Icon(Icons.phone),
+                              border: OutlineInputBorder(),
+                            ),
+                            keyboardType: TextInputType.phone,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 55,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        if (_formKey.currentState!.validate()) {
+                          final tier = Tier(
+                            id: widget.tier?.id ?? '',
+                            name: _nameController.text.toUpperCase(),
+                            phone: _phoneController.text,
+                            address: _addressController.text,
+                            type: _accountNumber == '41100000' ? TierType.client : TierType.supplier,
+                            accountNumber: _accountNumber,
+                            compteComptable: _compteComptableController.text,
+                          );
+                          
+                          if (widget.tier == null) {
+                            await context.read<FirestoreService>().addTier(tier);
+                          } else {
+                            await context.read<FirestoreService>().updateTier(tier);
+                          }
+                          Navigator.pop(context);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1A237E),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 4,
+                      ),
+                      child: Text(
+                        widget.tier == null ? 'ENREGISTRER LE TIERS' : 'METTRE À JOUR',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

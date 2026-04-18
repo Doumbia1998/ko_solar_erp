@@ -5,6 +5,7 @@ import '../models/tier.dart';
 import '../models/transaction.dart';
 import '../models/payment.dart';
 import '../services/firestore_service.dart';
+import '../services/auth_service.dart';
 
 class TierDetailScreen extends StatefulWidget {
   final Tier tier;
@@ -94,7 +95,13 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
                       leading: Icon(t.type == TransactionType.sale ? Icons.arrow_upward : Icons.arrow_downward, 
                                    color: t.type == TransactionType.sale ? Colors.blue : Colors.green),
                       title: Text(t.invoiceNumber),
-                      subtitle: Text(DateFormat('dd/MM/yyyy').format(t.date)),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(DateFormat('dd/MM/yyyy').format(t.date)),
+                          Text('Fait par : ${t.createdBy}', style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.grey)),
+                        ],
+                      ),
                       trailing: Text('${NumberFormat('#,###', 'fr_FR').format(t.netToPay)} F', style: const TextStyle(fontWeight: FontWeight.bold)),
                     );
                   },
@@ -152,6 +159,9 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
             ElevatedButton(
               onPressed: () async {
                 if (amountController.text.isNotEmpty) {
+                  final authService = Provider.of<AuthService>(context, listen: false);
+                  final user = await authService.getAppUser((await authService.user.first)!.uid);
+
                   final payment = Payment(
                     id: '',
                     tierId: widget.tier.id,
@@ -162,7 +172,7 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
                     method: mode,
                     reference: motifController.text,
                   );
-                  await service.addPayment(payment);
+                  await service.addPayment(payment, user?.displayName ?? 'Inconnu');
                   Navigator.pop(context);
                 }
               },

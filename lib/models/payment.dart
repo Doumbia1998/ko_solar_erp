@@ -10,7 +10,8 @@ class Payment {
   final DateTime date;
   final String method;
   final String reference;
-  final bool isPosted; // Nouveau
+  final bool isPosted; 
+  final String createdBy; // Nom de l'utilisateur
 
   Payment({
     required this.id,
@@ -22,6 +23,7 @@ class Payment {
     required this.method,
     required this.reference,
     this.isPosted = false,
+    this.createdBy = '',
   });
 
   Map<String, dynamic> toMap() {
@@ -35,6 +37,7 @@ class Payment {
       'method': method,
       'reference': reference,
       'isPosted': isPosted,
+      'createdBy': createdBy,
     };
   }
 
@@ -49,6 +52,7 @@ class Payment {
       method: map['method'] ?? '',
       reference: map['reference'] ?? '',
       isPosted: map['isPosted'] ?? false,
+      createdBy: map['createdBy'] ?? '',
     );
   }
 }

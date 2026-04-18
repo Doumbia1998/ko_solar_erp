@@ -30,6 +30,18 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _currentIndex = 0;
 
+  Widget _buildSectionHeader(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontWeight: FontWeight.bold,
+        color: Colors.blueGrey,
+        letterSpacing: 1.1,
+        fontSize: 13,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // On utilise le Provider directement pour avoir l'utilisateur en temps réel
@@ -138,6 +150,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
 class DashboardContent extends StatelessWidget {
   const DashboardContent({super.key});
 
+  Widget _buildSectionHeader(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontWeight: FontWeight.bold,
+        color: Colors.blueGrey,
+        letterSpacing: 1.1,
+        fontSize: 13,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final firestoreService = Provider.of<FirestoreService>(context);
@@ -183,86 +207,118 @@ class DashboardContent extends StatelessWidget {
                 // --- TRANSPORT ---
                 double beneficeTrans = trips.fold(0.0, (sum, t) => sum + t.netProfit);
 
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (canViewSales) ...[
-                        const Text('SITUATION CLIENTS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(child: GestureDetector(
-                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransactionListScreen(type: TransactionType.sale))),
-                              child: DashboardCard(title: 'CHIFFRE D\'AFFAIRE', value: '${currencyFormat.format(caSales)} F', icon: Icons.trending_up, iconColor: Colors.blue),
-                            )),
-                            const SizedBox(width: 10),
-                            Expanded(child: GestureDetector(
-                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen())),
-                              child: DashboardCard(title: 'ENCAISSÉ', value: '${currencyFormat.format(totalEncaisseSales)} F', icon: Icons.check_circle_outline, iconColor: Colors.green),
-                            )),
+                return Center(
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 1000),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 30.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (canViewSales) ...[
+                            _buildSectionHeader('SITUATION CLIENTS'),
+                            const SizedBox(height: 15),
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                final isWeb = constraints.maxWidth > 600;
+                                return GridView.count(
+                                  crossAxisCount: isWeb ? 3 : 2,
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  crossAxisSpacing: 15,
+                                  mainAxisSpacing: 15,
+                                  childAspectRatio: isWeb ? 2.5 : 1.3,
+                                  children: [
+                                    GestureDetector(
+                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransactionListScreen(type: TransactionType.sale))),
+                                      child: DashboardCard(title: 'CHIFFRE D\'AFFAIRE', value: '${currencyFormat.format(caSales)} F', icon: Icons.trending_up, iconColor: Colors.blue),
+                                    ),
+                                    GestureDetector(
+                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen())),
+                                      child: DashboardCard(title: 'ENCAISSÉ', value: '${currencyFormat.format(totalEncaisseSales)} F', icon: Icons.check_circle_outline, iconColor: Colors.green),
+                                    ),
+                                    GestureDetector(
+                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TierListScreen(type: TierType.client))),
+                                      child: DashboardCard(title: 'IMPAYÉS CLIENTS', value: '${currencyFormat.format(totalImpayesSales < 0 ? 0 : totalImpayesSales)} F', icon: Icons.warning_amber_rounded, iconColor: Colors.red),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
                           ],
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(child: GestureDetector(
-                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TierListScreen(type: TierType.client))),
-                              child: DashboardCard(title: 'IMPAYÉS CLIENTS', value: '${currencyFormat.format(totalImpayesSales < 0 ? 0 : totalImpayesSales)} F', icon: Icons.warning_amber_rounded, iconColor: Colors.red),
-                            )),
-                            if (canViewTransport)
-                              Expanded(child: Padding(
-                                padding: const EdgeInsets.only(left: 10),
-                                child: GestureDetector(
-                                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransportScreen())),
-                                  child: DashboardCard(title: 'BÉNÉFICE TRANS.', value: '${currencyFormat.format(beneficeTrans)} F', icon: Icons.local_shipping, iconColor: Colors.purple),
-                                ),
-                              )),
-                            if (!canViewTransport) const Spacer(),
+                          const SizedBox(height: 35),
+                          if (canViewPurchases) ...[
+                            _buildSectionHeader('SITUATION FOURNISSEURS'),
+                            const SizedBox(height: 15),
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                final isWeb = constraints.maxWidth > 600;
+                                return GridView.count(
+                                  crossAxisCount: isWeb ? 2 : 2,
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  crossAxisSpacing: 15,
+                                  mainAxisSpacing: 15,
+                                  childAspectRatio: isWeb ? 3.5 : 1.3,
+                                  children: [
+                                    GestureDetector(
+                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransactionListScreen(type: TransactionType.purchase))),
+                                      child: DashboardCard(title: 'TOTAL ACHATS', value: '${currencyFormat.format(caPurchases)} F', icon: Icons.shopping_cart, iconColor: Colors.teal),
+                                    ),
+                                    GestureDetector(
+                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TierListScreen(type: TierType.supplier))),
+                                      child: DashboardCard(title: 'DETTES FOURN.', value: '${currencyFormat.format(totalImpayesPurchases < 0 ? 0 : totalImpayesPurchases)} F', icon: Icons.money_off, iconColor: Colors.orange),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
                           ],
-                        ),
-                      ],
-                      const SizedBox(height: 25),
-                      if (canViewPurchases) ...[
-                        const Text('SITUATION FOURNISSEURS (ACHATS)', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(child: GestureDetector(
-                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransactionListScreen(type: TransactionType.purchase))),
-                              child: DashboardCard(title: 'TOTAL ACHATS', value: '${currencyFormat.format(caPurchases)} F', icon: Icons.shopping_cart, iconColor: Colors.teal),
-                            )),
-                            const SizedBox(width: 10),
-                            Expanded(child: GestureDetector(
-                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TierListScreen(type: TierType.supplier))),
-                              child: DashboardCard(title: 'DETTES FOURN.', value: '${currencyFormat.format(totalImpayesPurchases < 0 ? 0 : totalImpayesPurchases)} F', icon: Icons.money_off, iconColor: Colors.orange),
-                            )),
+                          if (canViewTransport) ...[
+                            const SizedBox(height: 35),
+                            _buildSectionHeader('TRANSPORT & LOGISTIQUE'),
+                            const SizedBox(height: 15),
+                            SizedBox(
+                              width: 300,
+                              child: GestureDetector(
+                                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransportScreen())),
+                                child: DashboardCard(title: 'BÉNÉFICE TRANS.', value: '${currencyFormat.format(beneficeTrans)} F', icon: Icons.local_shipping, iconColor: Colors.purple),
+                              ),
+                            ),
                           ],
-                        ),
-                      ],
-                      const SizedBox(height: 30),
-                      const Text('Dernières Activités', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
-                      const SizedBox(height: 10),
-                      if (transactions.isEmpty)
-                        const Center(child: Text('Aucune activité', style: TextStyle(color: Colors.grey)))
-                      else
-                        ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: transactions.length > 5 ? 5 : transactions.length,
-                          itemBuilder: (context, index) {
-                            final t = transactions[index];
-                            return ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              leading: Icon(t.type == TransactionType.sale ? Icons.arrow_upward : Icons.arrow_downward, color: t.type == TransactionType.sale ? Colors.blue : Colors.teal),
-                              title: Text(t.tierName),
-                              subtitle: Text(DateFormat('dd/MM/yyyy').format(t.date)),
-                              trailing: Text('${currencyFormat.format(t.totalHT)} F', style: const TextStyle(fontWeight: FontWeight.bold)),
-                            );
-                          },
-                        ),
-                    ],
+                          const SizedBox(height: 40),
+                          const Text('Dernières Activités', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
+                          const SizedBox(height: 15),
+                          if (transactions.isEmpty)
+                            const Center(child: Padding(
+                              padding: EdgeInsets.all(20.0),
+                              child: Text('Aucune activité récente', style: TextStyle(color: Colors.grey)),
+                            ))
+                          else
+                            ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: transactions.length > 5 ? 5 : transactions.length,
+                              itemBuilder: (context, index) {
+                                final t = transactions[index];
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 10),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  child: ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundColor: t.type == TransactionType.sale ? Colors.blue.shade50 : Colors.teal.shade50,
+                                      child: Icon(t.type == TransactionType.sale ? Icons.arrow_upward : Icons.arrow_downward, color: t.type == TransactionType.sale ? Colors.blue : Colors.teal, size: 20),
+                                    ),
+                                    title: Text(t.tierName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    subtitle: Text(DateFormat('dd MMMM yyyy').format(t.date)),
+                                    trailing: Text('${currencyFormat.format(t.totalHT)} F', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo)),
+                                  ),
+                                );
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
                 );
               }

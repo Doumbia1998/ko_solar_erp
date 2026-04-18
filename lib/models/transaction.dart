@@ -54,6 +54,7 @@ class AppTransaction {
   final double transportFees;
   final bool addTransport; // true = ajouter, false = soustraire
   final bool isPosted; // Nouveau : statut comptabilisation
+  final String createdBy; // Nom de l'utilisateur
 
   AppTransaction({
     required this.id,
@@ -70,6 +71,7 @@ class AppTransaction {
     this.transportFees = 0.0,
     this.addTransport = true,
     this.isPosted = false,
+    this.createdBy = '',
   });
 
   double get netToPay => addTransport ? (totalHT + transportFees) : (totalHT - transportFees);
@@ -91,6 +93,7 @@ class AppTransaction {
       'transportFees': transportFees,
       'addTransport': addTransport,
       'isPosted': isPosted,
+      'createdBy': createdBy,
     };
   }
 
@@ -110,6 +113,7 @@ class AppTransaction {
       transportFees: (map['transportFees'] ?? 0).toDouble(),
       addTransport: map['addTransport'] ?? true,
       isPosted: map['isPosted'] ?? false,
+      createdBy: map['createdBy'] ?? '',
     );
   }
 }

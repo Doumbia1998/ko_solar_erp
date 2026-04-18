@@ -62,7 +62,29 @@ class AuthWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = Provider.of<AppUser?>(context);
-    return user != null ? const DashboardScreen() : const LoginScreen();
+    final authService = Provider.of<AuthService>(context);
+
+    return StreamBuilder<AppUser?>(
+      stream: authService.user.asyncMap((user) async {
+        if (user == null) return null;
+        return await authService.getAppUser(user.uid);
+      }),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(color: Color(0xFF1A237E)),
+            ),
+          );
+        }
+        
+        final appUser = snapshot.data;
+        if (appUser != null) {
+          return const DashboardScreen();
+        } else {
+          return const LoginScreen();
+        }
+      },
+    );
   }
 }

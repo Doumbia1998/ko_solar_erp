@@ -13,6 +13,28 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscureText = true;
+  bool _isLoading = false;
+
+  void _resetPassword() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Veuillez saisir votre email pour réinitialiser le mot de passe')),
+      );
+      return;
+    }
+
+    try {
+      await Provider.of<AuthService>(context, listen: false).sendPasswordResetEmail(email);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Email de réinitialisation envoyé ! Vérifiez votre boîte de réception.')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur : ${e.toString()}')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -22,121 +44,110 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: const Color(0xFF1E88E5), // Blue background
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 30),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Logo Container avec Image ou Cercle
-              Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, spreadRadius: 2)
-                  ],
-                ),
-                child: ClipOval(
-                  child: Image.asset(
-                    'assets/images/logo.png',
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) {
-                      // Fallback si l'image n'existe pas encore
-                      return const Center(
-                        child: Text(
-                          'SSF',
-                          style: TextStyle(color: Color(0xFF1A237E), fontSize: 35, fontWeight: FontWeight.bold),
-                        ),
-                      );
-                    },
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 400),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Logo Container
+                Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, spreadRadius: 2)
+                    ],
+                  ),
+                  child: ClipOval(
+                    child: Image.asset(
+                      'assets/images/logo.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) => const Center(
+                        child: Text('SSF', style: TextStyle(color: Color(0xFF1A237E), fontSize: 30, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 15),
-              const Text(
-                'SSF ERP VENTE',
-                style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold, letterSpacing: 1.2),
-              ),
-              const Text(
-                'Gestion Intégrée & Comptabilité',
-                style: TextStyle(color: Colors.white70, fontSize: 14),
-              ),
-              const SizedBox(height: 40),
-              // Login Card
-              Container(
-                padding: const EdgeInsets.all(25),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
+                const SizedBox(height: 15),
+                const Text(
+                  'SSF ERP VENTE',
+                  style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 1.2),
                 ),
-                child: Column(
-                  children: [
-                    TextField(
-                      controller: _emailController,
-                      decoration: const InputDecoration(
-                        icon: Icon(Icons.email_outlined),
-                        labelText: 'Email Utilisateur',
-                        border: UnderlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    TextField(
-                      controller: _passwordController,
-                      obscureText: _obscureText,
-                      decoration: InputDecoration(
-                        icon: const Icon(Icons.lock_outline),
-                        labelText: 'Mot de passe',
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _obscureText ? Icons.visibility_off : Icons.visibility,
-                          ),
-                          onPressed: () {
-                            setState(() {
-                              _obscureText = !_obscureText;
-                            });
-                          },
-                        ),
-                        border: const UnderlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 30),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          final user = await authService.signIn(
-                            _emailController.text.trim(),
-                            _passwordController.text.trim(),
-                          );
-                          if (user == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Erreur de connexion')),
-                            );
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1A237E),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
+                const SizedBox(height: 30),
+                // Login Card
+                Card(
+                  elevation: 8,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(25),
+                    child: Column(
+                      children: [
+                        TextField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: const InputDecoration(
+                            icon: Icon(Icons.email_outlined),
+                            labelText: 'Email Utilisateur',
                           ),
                         ),
-                        child: const Text(
-                          'SE CONNECTER',
-                          style: TextStyle(color: Colors.white, fontSize: 16),
+                        const SizedBox(height: 20),
+                        TextField(
+                          controller: _passwordController,
+                          obscureText: _obscureText,
+                          decoration: InputDecoration(
+                            icon: const Icon(Icons.lock_outline),
+                            labelText: 'Mot de passe',
+                            suffixIcon: IconButton(
+                              icon: Icon(_obscureText ? Icons.visibility_off : Icons.visibility),
+                              onPressed: () => setState(() => _obscureText = !_obscureText),
+                            ),
+                          ),
                         ),
-                      ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: _resetPassword,
+                            child: const Text('Mot de passe oublié ?', style: TextStyle(fontSize: 12)),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : () async {
+                              setState(() => _isLoading = true);
+                              final user = await authService.signIn(
+                                _emailController.text.trim(),
+                                _passwordController.text.trim(),
+                              );
+                              if (mounted) {
+                                setState(() => _isLoading = false);
+                                if (user == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Erreur : Email ou mot de passe incorrect')));
+                                }
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1A237E),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            child: _isLoading 
+                                ? const CircularProgressIndicator(color: Colors.white)
+                                : const Text('SE CONNECTER', style: TextStyle(color: Colors.white, fontSize: 16)),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 50),
-              const Text(
-                'Développer par @MLD Consulting',
-                style: TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-            ],
+                const SizedBox(height: 40),
+                const Text('Développé par @MLD Consulting', style: TextStyle(color: Colors.white70, fontSize: 11)),
+              ],
+            ),
           ),
         ),
       ),

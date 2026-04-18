@@ -100,6 +100,7 @@ class Trip {
   DateTime departureDate;
   DateTime? returnDate;
   bool isFinished;
+  String createdBy;
 
   Trip({
     required this.id,
@@ -109,6 +110,7 @@ class Trip {
     required this.departureDate,
     this.returnDate,
     this.isFinished = false,
+    this.createdBy = '',
   });
 
   String get truckId => truck.id;

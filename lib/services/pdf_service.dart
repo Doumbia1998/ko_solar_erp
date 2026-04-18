@@ -7,6 +7,7 @@ import '../models/transport.dart';
 import '../models/stock_transfer.dart';
 import '../models/journal_entry.dart';
 import '../models/payment.dart';
+import '../utils/number_to_words.dart';
 
 class PdfService {
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'fr_FR');
@@ -87,6 +88,9 @@ class PdfService {
                     pw.SizedBox(width: 200, child: pw.Divider()),
                     pw.Text('NET À PAYER: ${_currencyFormat.format(transaction.netToPay)} FCFA', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
                     pw.SizedBox(height: 5),
+                    pw.Text('Arrêté la présente facture à la somme de :', style: pw.TextStyle(fontStyle: pw.FontStyle.italic, fontSize: 10)),
+                    pw.Text(NumberToWords.convertToFr(transaction.netToPay), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
+                    pw.SizedBox(height: 10),
                     pw.Text('Acompte versé: ${_currencyFormat.format(transaction.amountPaid)} FCFA'),
                     pw.Text('Reste à payer: ${_currencyFormat.format(transaction.balance)} FCFA', style: pw.TextStyle(color: transaction.balance > 0 ? PdfColors.red900 : PdfColors.green900)),
                   ],
@@ -360,6 +364,79 @@ class PdfService {
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async => pdf.save(),
       name: 'Rapport_Reglements_${DateFormat('ddMMyy').format(DateTime.now())}.pdf'
+    );
+  }
+
+  static Future<void> generatePaymentReceipt(Payment payment) async {
+    final pdf = pw.Document();
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a5,
+        orientation: pw.PageOrientation.landscape,
+        build: (pw.Context context) {
+          return pw.Container(
+            padding: const pw.EdgeInsets.all(10),
+            decoration: pw.BoxDecoration(border: pw.Border.all(width: 2)),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('REÇU DE PAIEMENT', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+                    pw.Text('N° ${payment.id.substring(0, 8).toUpperCase()}'),
+                  ],
+                ),
+                pw.Divider(),
+                pw.SizedBox(height: 10),
+                pw.Text('Reçu de : ${payment.tierName.toUpperCase()}', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+                pw.SizedBox(height: 5),
+                pw.Text('La somme de :'),
+                pw.Container(
+                  width: double.infinity,
+                  padding: const pw.EdgeInsets.all(5),
+                  color: PdfColors.grey200,
+                  child: pw.Text(NumberToWords.convertToFr(payment.amount), style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                ),
+                pw.SizedBox(height: 10),
+                pw.Row(
+                  children: [
+                    pw.Expanded(child: pw.Text('Motif : ${payment.reference}')),
+                    pw.Text('Mode : ${payment.method}'),
+                  ],
+                ),
+                pw.SizedBox(height: 15),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text('Date : ${DateFormat('dd/MM/yyyy').format(payment.date)}'),
+                        pw.SizedBox(height: 5),
+                        pw.Text('Montant : ${_currencyFormat.format(payment.amount)} FCFA', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
+                      ],
+                    ),
+                    pw.Column(
+                      children: [
+                        pw.Text('Signature & Cachet'),
+                        pw.SizedBox(height: 40),
+                        pw.Text('SOCIETE SANOGO & FRERE', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+
+    await Printing.layoutPdf(
+      onLayout: (PdfPageFormat format) async => pdf.save(),
+      name: 'Recu_${payment.tierName}_${DateFormat('ddMMyy').format(payment.date)}.pdf'
     );
   }
 
