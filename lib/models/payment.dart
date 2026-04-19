@@ -10,6 +10,7 @@ class Payment {
   final DateTime date;
   final String method;
   final String reference;
+  final String? invoiceNumber; // Lien avec une facture spécifique
   final bool isPosted; 
   final String createdBy; // Nom de l'utilisateur
 
@@ -22,6 +23,7 @@ class Payment {
     required this.date,
     required this.method,
     required this.reference,
+    this.invoiceNumber,
     this.isPosted = false,
     this.createdBy = '',
   });
@@ -36,6 +38,7 @@ class Payment {
       'date': Timestamp.fromDate(date),
       'method': method,
       'reference': reference,
+      'invoiceNumber': invoiceNumber,
       'isPosted': isPosted,
       'createdBy': createdBy,
     };
@@ -51,6 +54,7 @@ class Payment {
       date: (map['date'] as Timestamp).toDate(),
       method: map['method'] ?? '',
       reference: map['reference'] ?? '',
+      invoiceNumber: map['invoiceNumber'],
       isPosted: map['isPosted'] ?? false,
       createdBy: map['createdBy'] ?? '',
     );

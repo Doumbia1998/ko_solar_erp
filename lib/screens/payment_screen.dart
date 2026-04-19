@@ -212,6 +212,8 @@ class _PaymentScreenState extends State<PaymentScreen> with SingleTickerProvider
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('${p.method} - ${DateFormat('dd/MM/yyyy').format(p.date)}'),
+          if (p.invoiceNumber != null)
+            Text('Facture associée : ${p.invoiceNumber}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo, fontSize: 12)),
           if (p.createdBy.isNotEmpty)
             Text('Fait par: ${p.createdBy}', style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.blueGrey)),
           if (p.isPosted)
@@ -276,6 +278,8 @@ class _PaymentScreenState extends State<PaymentScreen> with SingleTickerProvider
                   children: [
                     Text(p.tierName.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                     Text('${p.method} - ${DateFormat('dd/MM/yy').format(p.date)}', style: const TextStyle(fontSize: 12)),
+                    if (p.invoiceNumber != null)
+                      Text('Facture : ${p.invoiceNumber}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo, fontSize: 11)),
                     if (p.createdBy.isNotEmpty)
                       Text('Fait par: ${p.createdBy}', style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.blueGrey)),
                   ],

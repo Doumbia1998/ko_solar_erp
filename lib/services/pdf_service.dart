@@ -12,8 +12,15 @@ import '../utils/number_to_words.dart';
 class PdfService {
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'fr_FR');
 
-  static Future<void> generateInvoice(AppTransaction transaction) async {
+  static Future<void> generateInvoice(AppTransaction transaction, {List<Payment>? payments}) async {
     final pdf = pw.Document();
+
+    // Calcul du solde réel pour le PDF
+    double totalPaid = transaction.amountPaid;
+    if (payments != null) {
+      totalPaid += payments.where((p) => p.invoiceNumber == transaction.invoiceNumber).fold(0, (sum, p) => sum + p.amount);
+    }
+    double currentBalance = transaction.netToPay - totalPaid;
 
     pdf.addPage(
       pw.Page(
@@ -45,8 +52,10 @@ class PdfService {
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text('N° Facture: ${transaction.invoiceNumber}'),
+                      pw.Text('N° Facture: ${transaction.invoiceNumber}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
                       pw.Text('Date: ${DateFormat('dd/MM/yyyy').format(transaction.date)}'),
+                      if (transaction.destination.isNotEmpty)
+                        pw.Text('Destination: ${transaction.destination}', style: pw.TextStyle(color: PdfColors.blueGrey700, fontStyle: pw.FontStyle.italic)),
                     ],
                   ),
                   pw.Container(
@@ -56,7 +65,7 @@ class PdfService {
                     child: pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
-                        pw.Text('Client: ${transaction.tierName}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        pw.Text('${transaction.type == TransactionType.sale ? "Client" : "Fournisseur"}: ${transaction.tierName}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
                         pw.Text('ID: ${transaction.tierId}'),
                       ],
                     ),
@@ -64,10 +73,12 @@ class PdfService {
                 ],
               ),
               pw.SizedBox(height: 30),
-              pw.Text('FACTURE', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+              pw.Text(transaction.type == TransactionType.sale ? 'FACTURE DE VENTE' : 'FACTURE D\'ACHAT', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
               pw.SizedBox(height: 10),
               pw.TableHelper.fromTextArray(
                 headers: ['Désignation', 'Qté', 'Px unitaire', 'Remise', 'Total Net'],
+                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+                headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
                 data: transaction.items.map((item) => [
                   item.productName,
                   item.quantity.toString(),
@@ -77,31 +88,52 @@ class PdfService {
                 ]).toList(),
               ),
               pw.SizedBox(height: 20),
-              pw.Align(
-                alignment: pw.Alignment.centerRight,
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.end,
-                  children: [
-                    pw.Text('Total Articles (Net): ${_currencyFormat.format(transaction.totalHT)} FCFA'),
-                    if (transaction.transportFees > 0)
-                      pw.Text('Frais de Transport: ${transaction.addTransport ? "+" : "-"} ${_currencyFormat.format(transaction.transportFees)} FCFA'),
-                    pw.SizedBox(width: 200, child: pw.Divider()),
-                    pw.Text('NET À PAYER: ${_currencyFormat.format(transaction.netToPay)} FCFA', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
-                    pw.SizedBox(height: 5),
-                    pw.Text('Arrêté la présente facture à la somme de :', style: pw.TextStyle(fontStyle: pw.FontStyle.italic, fontSize: 10)),
-                    pw.Text(NumberToWords.convertToFr(transaction.netToPay), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
-                    pw.SizedBox(height: 10),
-                    pw.Text('Acompte versé: ${_currencyFormat.format(transaction.amountPaid)} FCFA'),
-                    pw.Text('Reste à payer: ${_currencyFormat.format(transaction.balance)} FCFA', style: pw.TextStyle(color: transaction.balance > 0 ? PdfColors.red900 : PdfColors.green900)),
-                  ],
-                ),
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Expanded(
+                    flex: 1,
+                    child: (payments != null && payments.any((p) => p.invoiceNumber == transaction.invoiceNumber)) 
+                      ? pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Text('Historique des Règlements :', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
+                            pw.SizedBox(height: 5),
+                            ...payments.where((p) => p.invoiceNumber == transaction.invoiceNumber).map((p) => 
+                              pw.Text('- ${DateFormat('dd/MM/yy').format(p.date)} (${p.method}): ${_currencyFormat.format(p.amount)} F', style: const pw.TextStyle(fontSize: 9))
+                            ),
+                          ],
+                        )
+                      : pw.SizedBox(),
+                  ),
+                  pw.Expanded(
+                    flex: 1,
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.end,
+                      children: [
+                        pw.Text('Total Articles (Net): ${_currencyFormat.format(transaction.totalHT)} FCFA'),
+                        if (transaction.transportFees > 0)
+                          pw.Text('Frais de Transport: ${transaction.addTransport ? "+" : "-"} ${_currencyFormat.format(transaction.transportFees)} FCFA'),
+                        pw.SizedBox(width: 200, child: pw.Divider()),
+                        pw.Text('NET À PAYER: ${_currencyFormat.format(transaction.netToPay)} FCFA', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
+                        pw.SizedBox(height: 5),
+                        pw.Text('Total Déjà Réglé: ${_currencyFormat.format(totalPaid)} FCFA'),
+                        pw.Text('SOLDE À RÉGLER: ${_currencyFormat.format(currentBalance)} FCFA', 
+                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: currentBalance > 0 ? PdfColors.red900 : PdfColors.green900, fontSize: 12)),
+                        pw.SizedBox(height: 10),
+                        pw.Text('Arrêté la présente facture à la somme de :', style: pw.TextStyle(fontStyle: pw.FontStyle.italic, fontSize: 8)),
+                        pw.Text(NumberToWords.convertToFr(transaction.netToPay), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
               pw.SizedBox(height: 50),
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text('Pour acquit'),
-                  pw.Text('Le Fournisseur'),
+                  pw.Text('Signature Client / Fournisseur', style: const pw.TextStyle(fontSize: 10, decoration: pw.TextDecoration.underline)),
+                  pw.Text('Pour la Direction (Cachet & Signature)', style: const pw.TextStyle(fontSize: 10, decoration: pw.TextDecoration.underline)),
                 ],
               ),
             ],

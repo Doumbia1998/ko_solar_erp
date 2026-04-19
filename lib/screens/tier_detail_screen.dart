@@ -6,6 +6,7 @@ import '../models/transaction.dart';
 import '../models/payment.dart';
 import '../services/firestore_service.dart';
 import '../services/auth_service.dart';
+import '../services/pdf_service.dart';
 
 class TierDetailScreen extends StatefulWidget {
   final Tier tier;
@@ -80,31 +81,75 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
           Expanded(
             child: StreamBuilder<List<AppTransaction>>(
               stream: firestoreService.getTransactions(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-                
-                final transactions = snapshot.data?.where((t) => t.tierId == widget.tier.id).toList() ?? [];
-                
-                if (transactions.isEmpty) return const Center(child: Text('Aucune opération enregistrée'));
+              builder: (context, snapshotTrans) {
+                return StreamBuilder<List<Payment>>(
+                  stream: firestoreService.getPayments(tierId: widget.tier.id),
+                  builder: (context, snapshotPay) {
+                    if (snapshotTrans.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+                    
+                    final transactions = snapshotTrans.data?.where((t) => t.tierId == widget.tier.id).toList() ?? [];
+                    final payments = snapshotPay.data ?? [];
+                    
+                    if (transactions.isEmpty) return const Center(child: Text('Aucune opération enregistrée'));
 
-                return ListView.builder(
-                  itemCount: transactions.length,
-                  itemBuilder: (context, index) {
-                    final t = transactions[index];
-                    return ListTile(
-                      leading: Icon(t.type == TransactionType.sale ? Icons.arrow_upward : Icons.arrow_downward, 
-                                   color: t.type == TransactionType.sale ? Colors.blue : Colors.green),
-                      title: Text(t.invoiceNumber),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(DateFormat('dd/MM/yyyy').format(t.date)),
-                          Text('Fait par : ${t.createdBy}', style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.grey)),
-                        ],
-                      ),
-                      trailing: Text('${NumberFormat('#,###', 'fr_FR').format(t.netToPay)} F', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    return ListView.builder(
+                      itemCount: transactions.length,
+                      itemBuilder: (context, index) {
+                        final t = transactions[index];
+                        
+                        // Calcul du payé pour CETTE facture spécifique
+                        double payeFacture = t.amountPaid; // Acompte initial
+                        payeFacture += payments
+                            .where((p) => p.invoiceNumber == t.invoiceNumber)
+                            .fold(0.0, (sum, p) => sum + p.amount);
+                        
+                        double soldeFacture = t.netToPay - payeFacture;
+
+                        return Card(
+                          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          child: ExpansionTile(
+                            leading: Icon(t.type == TransactionType.sale ? Icons.arrow_upward : Icons.arrow_downward, 
+                                         color: t.type == TransactionType.sale ? Colors.blue : Colors.green),
+                            title: Text('${t.invoiceNumber} | Solde: ${NumberFormat('#,###').format(soldeFacture)} F', 
+                                        style: TextStyle(fontWeight: FontWeight.bold, color: soldeFacture > 0 ? Colors.red : Colors.green)),
+                            subtitle: Text('Total: ${NumberFormat('#,###').format(t.netToPay)} F | Date: ${DateFormat('dd/MM/yy').format(t.date)}'),
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (t.destination.isNotEmpty)
+                                      Text('Destination: ${t.destination}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo)),
+                                    const Divider(),
+                                    const Text('Détail des règlements :', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                    const SizedBox(height: 5),
+                                    Text('• Acompte initial : ${NumberFormat('#,###').format(t.amountPaid)} F'),
+                                    ...payments.where((p) => p.invoiceNumber == t.invoiceNumber).map((p) => 
+                                      Text('• ${DateFormat('dd/MM/yy').format(p.date)} (${p.method}) : ${NumberFormat('#,###').format(p.amount)} F')
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text('Fait par : ${t.createdBy}', style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.grey)),
+                                        ElevatedButton.icon(
+                                          onPressed: () => PdfService.generateInvoice(t, payments: payments),
+                                          icon: const Icon(Icons.picture_as_pdf, size: 16),
+                                          label: const Text('Facture PDF', style: TextStyle(fontSize: 12)),
+                                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade800, foregroundColor: Colors.white),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              )
+                            ],
+                          ),
+                        );
+                      },
                     );
-                  },
+                  }
                 );
               },
             ),
@@ -114,10 +159,19 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
     );
   }
 
-  void _showPaymentDialog(BuildContext context, FirestoreService service) {
+  void _showPaymentDialog(BuildContext context, FirestoreService service) async {
     final amountController = TextEditingController();
     final motifController = TextEditingController();
     String mode = 'Espèces';
+    
+    // Récupérer les factures et les règlements pour calculer les restes à payer
+    final allTransactions = await service.getTransactions().first;
+    final myTransactions = allTransactions.where((t) => t.tierId == widget.tier.id).toList();
+    final myPayments = await service.getPayments(tierId: widget.tier.id).first;
+    
+    String? selectedInvoice;
+
+    if (!context.mounted) return;
 
     showDialog(
       context: context,
@@ -130,6 +184,25 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const Text('Lier à une facture (Optionnel)', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                DropdownButton<String>(
+                  isExpanded: true,
+                  hint: const Text('Toutes les factures (Global)'),
+                  value: selectedInvoice,
+                  items: [
+                    const DropdownMenuItem<String>(value: null, child: Text('Règlement Global')),
+                    ...myTransactions.map((t) {
+                      double paye = t.amountPaid + myPayments.where((p) => p.invoiceNumber == t.invoiceNumber).fold(0.0, (sum, p) => sum + p.amount);
+                      double reste = t.netToPay - paye;
+                      return DropdownMenuItem(
+                        value: t.invoiceNumber, 
+                        child: Text('${t.invoiceNumber} (Total: ${NumberFormat('#,###').format(t.netToPay)} F | Reste: ${NumberFormat('#,###').format(reste)} F)')
+                      );
+                    }),
+                  ],
+                  onChanged: (val) => setDialogState(() => selectedInvoice = val),
+                ),
+                const SizedBox(height: 20),
                 const Text('Montant', style: TextStyle(color: Colors.grey, fontSize: 12)),
                 TextField(
                   controller: amountController,
@@ -141,16 +214,14 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
                 DropdownButton<String>(
                   isExpanded: true,
                   value: mode,
-                  items: ['Espèces', 'Chèque', 'Virement'].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                  items: ['Espèces', 'Chèque', 'Virement', 'Mobile Money'].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
                   onChanged: (val) => setDialogState(() => mode = val!),
                 ),
-                if (mode != 'Espèces') ...[
-                  const SizedBox(height: 20),
-                  TextField(
-                    controller: motifController,
-                    decoration: const InputDecoration(labelText: 'Motif / Banque', border: UnderlineInputBorder()),
-                  ),
-                ],
+                const SizedBox(height: 20),
+                TextField(
+                  controller: motifController,
+                  decoration: const InputDecoration(labelText: 'Référence / Motif', border: UnderlineInputBorder()),
+                ),
               ],
             ),
           ),
@@ -167,13 +238,14 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
                     tierId: widget.tier.id,
                     tierName: widget.tier.name,
                     tierType: widget.tier.type,
-                    amount: double.tryParse(amountController.text) ?? 0,
+                    amount: double.tryParse(amountController.text.replaceAll(' ', '')) ?? 0,
                     date: DateTime.now(),
                     method: mode,
                     reference: motifController.text,
+                    invoiceNumber: selectedInvoice, // On lie le règlement à la facture choisie
                   );
                   await service.addPayment(payment, user?.displayName ?? 'Inconnu');
-                  Navigator.pop(context);
+                  if (context.mounted) Navigator.pop(context);
                 }
               },
               style: ElevatedButton.styleFrom(

@@ -51,6 +51,7 @@ class AppTransaction {
   final double amountPaid;
   final String paymentMethod;
   final String warehouseId;
+  final String destination; // Destination du produit
   final double transportFees;
   final bool addTransport; // true = ajouter, false = soustraire
   final bool isPosted; // Nouveau : statut comptabilisation
@@ -68,6 +69,7 @@ class AppTransaction {
     required this.amountPaid,
     required this.paymentMethod,
     required this.warehouseId,
+    this.destination = '',
     this.transportFees = 0.0,
     this.addTransport = true,
     this.isPosted = false,
@@ -90,6 +92,7 @@ class AppTransaction {
       'amountPaid': amountPaid,
       'paymentMethod': paymentMethod,
       'warehouseId': warehouseId,
+      'destination': destination,
       'transportFees': transportFees,
       'addTransport': addTransport,
       'isPosted': isPosted,
@@ -110,6 +113,7 @@ class AppTransaction {
       amountPaid: (map['amountPaid'] ?? 0).toDouble(),
       paymentMethod: map['paymentMethod'] ?? '',
       warehouseId: map['warehouseId'] ?? '',
+      destination: map['destination'] ?? map['sourceLocation'] ?? '',
       transportFees: (map['transportFees'] ?? 0).toDouble(),
       addTransport: map['addTransport'] ?? true,
       isPosted: map['isPosted'] ?? false,

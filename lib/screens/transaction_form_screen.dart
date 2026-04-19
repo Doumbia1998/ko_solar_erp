@@ -27,6 +27,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
   final Map<String, Product> _cachedProducts = {}; 
   
   String _paymentMethod = 'Espèces';
+  String _destination = ''; 
   bool _addTransport = true; 
   late TextEditingController _amountPaidController;
   late TextEditingController _transportFeesController;
@@ -41,6 +42,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
     if (widget.transaction != null) {
       _paymentMethod = widget.transaction!.paymentMethod;
       _addTransport = widget.transaction!.addTransport;
+      _destination = widget.transaction!.destination;
       _items.addAll(widget.transaction!.items);
       
       WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -160,6 +162,17 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                               onChanged: (val) => setState(() => _selectedWarehouse = val),
                             );
                           },
+                        ),
+                        const Divider(),
+                        TextFormField(
+                          initialValue: _destination,
+                          decoration: const InputDecoration(
+                            prefixIcon: Icon(Icons.location_on_outlined), 
+                            labelText: 'Destination / Origine des produits',
+                            hintText: 'Ex: Port d\'Abidjan, Entrepôt Nord...',
+                            border: InputBorder.none
+                          ),
+                          onChanged: (val) => _destination = val,
                         ),
                       ],
                     ),
@@ -382,6 +395,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                         amountPaid: double.tryParse(_amountPaidController.text.replaceAll(' ', '')) ?? 0,
                         paymentMethod: _paymentMethod,
                         warehouseId: _selectedWarehouse!.id,
+                        destination: _destination,
                         transportFees: double.tryParse(_transportFeesController.text.replaceAll(' ', '')) ?? 0,
                         addTransport: _addTransport,
                       );
