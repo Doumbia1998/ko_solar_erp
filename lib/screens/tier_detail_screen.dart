@@ -17,6 +17,26 @@ class TierDetailScreen extends StatefulWidget {
 }
 
 class _TierDetailScreenState extends State<TierDetailScreen> {
+  // Fonction utilitaire pour comparer les numéros de facture de manière robuste
+  bool _isMatchingInvoice(String? pInv, String? tInv, String pRef) {
+    if (tInv == null || tInv.isEmpty) return false;
+    
+    // Normalisation des numéros
+    String normT = tInv.trim().toUpperCase().replaceAll(' ', '');
+    
+    // 1. Match direct par invoiceNumber
+    if (pInv != null) {
+      String normP = pInv.trim().toUpperCase().replaceAll(' ', '');
+      if (normP == normT) return true;
+    }
+    
+    // 2. Match par la référence du paiement (si le numéro de facture y est écrit)
+    String normRef = pRef.toUpperCase().replaceAll(' ', '');
+    if (normRef.contains(normT)) return true;
+
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final firestoreService = Provider.of<FirestoreService>(context);
@@ -30,7 +50,6 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
       ),
       body: Column(
         children: [
-          // Utilisation d'un seul StreamBuilder combiné ou de deux StreamBuilders imbriqués
           StreamBuilder<List<AppTransaction>>(
             stream: firestoreService.getTransactions(),
             builder: (context, snapshotTrans) {
@@ -40,14 +59,22 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
                   double totalDu = 0;
                   double dejaPaye = 0;
                   
-                  if (snapshotTrans.hasData) {
+                  if (snapshotTrans.hasData && snapshotPay.hasData) {
                     final transactions = snapshotTrans.data!.where((t) => t.tierId == widget.tier.id).toList();
+                    final payments = snapshotPay.data!;
+                    
                     totalDu = transactions.fold(0.0, (sum, t) => sum + t.netToPay);
-                    dejaPaye = transactions.fold(0.0, (sum, t) => sum + t.amountPaid);
-                  }
-                  
-                  if (snapshotPay.hasData) {
-                    dejaPaye += snapshotPay.data!.fold(0.0, (sum, p) => sum + p.amount);
+                    
+                    // Calcul global simple pour l'en-tête
+                    dejaPaye = payments.fold(0.0, (sum, p) => sum + p.amount);
+                    
+                    // Sécurité pour les acomptes orphelins (anciennes données)
+                    for (var t in transactions) {
+                      if (t.amountPaid > 0) {
+                        bool acompteExiste = payments.any((p) => _isMatchingInvoice(p.invoiceNumber, t.invoiceNumber, p.reference));
+                        if (!acompteExiste) dejaPaye += t.amountPaid;
+                      }
+                    }
                   }
 
                   return Container(
@@ -58,7 +85,7 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
                       children: [
                         _buildDetailRow('Total dû (Net)', '${NumberFormat('#,###', 'fr_FR').format(totalDu)} FCFA'),
                         _buildDetailRow('Payé', '${NumberFormat('#,###', 'fr_FR').format(dejaPaye)} FCFA'),
-                        _buildDetailRow('Reste à Payer', '${NumberFormat('#,###', 'fr_FR').format(totalDu - dejaPaye)} FCFA', isBold: true),
+                        _buildDetailRow('Reste à Payer', '${NumberFormat('#,###', 'fr_FR').format((totalDu - dejaPaye) < 0 ? 0 : totalDu - dejaPaye)} FCFA', isBold: true),
                       ],
                     ),
                   );
@@ -92,18 +119,42 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
                     
                     if (transactions.isEmpty) return const Center(child: Text('Aucune opération enregistrée'));
 
+                    // --- LOGIQUE DE SOLDE GLISSANT ---
+                    // 1. Calculer le total payé par le tiers (Acomptes + Règlements)
+                    double creditTotal = payments.fold(0.0, (sum, p) => sum + p.amount);
+                    for (var t in transactions) {
+                      if (t.amountPaid > 0) {
+                        bool acompteDansPay = payments.any((p) => _isMatchingInvoice(p.invoiceNumber, t.invoiceNumber, p.reference));
+                        if (!acompteDansPay) creditTotal += t.amountPaid;
+                      }
+                    }
+
+                    // 2. Trier les transactions par date (la plus ancienne en premier pour imputer le crédit)
+                    final sortedTxs = List<AppTransaction>.from(transactions);
+                    sortedTxs.sort((a, b) => a.date.compareTo(b.date));
+
+                    Map<String, double> restesParFacture = {};
+                    double creditDisponible = creditTotal;
+
+                    for (var t in sortedTxs) {
+                      if (creditDisponible >= t.netToPay) {
+                        restesParFacture[t.id] = 0;
+                        creditDisponible -= t.netToPay;
+                      } else {
+                        restesParFacture[t.id] = t.netToPay - creditDisponible;
+                        creditDisponible = 0;
+                      }
+                    }
+
+                    // 3. Afficher (on remet dans l'ordre décroissant pour l'utilisateur)
+                    final displayTxs = List<AppTransaction>.from(transactions);
+                    displayTxs.sort((a, b) => b.date.compareTo(a.date));
+
                     return ListView.builder(
-                      itemCount: transactions.length,
+                      itemCount: displayTxs.length,
                       itemBuilder: (context, index) {
-                        final t = transactions[index];
-                        
-                        // Calcul du payé pour CETTE facture spécifique
-                        double payeFacture = t.amountPaid; // Acompte initial
-                        payeFacture += payments
-                            .where((p) => p.invoiceNumber == t.invoiceNumber)
-                            .fold(0.0, (sum, p) => sum + p.amount);
-                        
-                        double soldeFacture = t.netToPay - payeFacture;
+                        final t = displayTxs[index];
+                        double soldeFacture = restesParFacture[t.id] ?? t.netToPay;
 
                         return Card(
                           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -111,7 +162,7 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
                             leading: Icon(t.type == TransactionType.sale ? Icons.arrow_upward : Icons.arrow_downward, 
                                          color: t.type == TransactionType.sale ? Colors.blue : Colors.green),
                             title: Text('${t.invoiceNumber} | Solde: ${NumberFormat('#,###').format(soldeFacture)} F', 
-                                        style: TextStyle(fontWeight: FontWeight.bold, color: soldeFacture > 0 ? Colors.red : Colors.green)),
+                                        style: TextStyle(fontWeight: FontWeight.bold, color: soldeFacture <= 10 ? Colors.green : Colors.red)),
                             subtitle: Text('Total: ${NumberFormat('#,###').format(t.netToPay)} F | Date: ${DateFormat('dd/MM/yy').format(t.date)}'),
                             children: [
                               Padding(
@@ -125,7 +176,7 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
                                     const Text('Détail des règlements :', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                                     const SizedBox(height: 5),
                                     Text('• Acompte initial : ${NumberFormat('#,###').format(t.amountPaid)} F'),
-                                    ...payments.where((p) => p.invoiceNumber == t.invoiceNumber).map((p) => 
+                                    ...payments.where((p) => _isMatchingInvoice(p.invoiceNumber, t.invoiceNumber, p.reference)).map((p) => 
                                       Text('• ${DateFormat('dd/MM/yy').format(p.date)} (${p.method}) : ${NumberFormat('#,###').format(p.amount)} F')
                                     ),
                                     const SizedBox(height: 10),
@@ -134,7 +185,11 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
                                       children: [
                                         Text('Fait par : ${t.createdBy}', style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.grey)),
                                         ElevatedButton.icon(
-                                          onPressed: () => PdfService.generateInvoice(t, payments: payments),
+                                          onPressed: () => PdfService.generateInvoice(
+                                            t, 
+                                            allTierPayments: payments, 
+                                            allTierTransactions: transactions
+                                          ),
                                           icon: const Icon(Icons.picture_as_pdf, size: 16),
                                           label: const Text('Facture PDF', style: TextStyle(fontSize: 12)),
                                           style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade800, foregroundColor: Colors.white),
@@ -164,7 +219,6 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
     final motifController = TextEditingController();
     String mode = 'Espèces';
     
-    // Récupérer les factures et les règlements pour calculer les restes à payer
     final allTransactions = await service.getTransactions().first;
     final myTransactions = allTransactions.where((t) => t.tierId == widget.tier.id).toList();
     final myPayments = await service.getPayments(tierId: widget.tier.id).first;
@@ -187,18 +241,43 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
                 const Text('Lier à une facture (Optionnel)', style: TextStyle(color: Colors.grey, fontSize: 12)),
                 DropdownButton<String>(
                   isExpanded: true,
-                  hint: const Text('Toutes les factures (Global)'),
+                  hint: const Text('Règlement Global'),
                   value: selectedInvoice,
                   items: [
                     const DropdownMenuItem<String>(value: null, child: Text('Règlement Global')),
-                    ...myTransactions.map((t) {
-                      double paye = t.amountPaid + myPayments.where((p) => p.invoiceNumber == t.invoiceNumber).fold(0.0, (sum, p) => sum + p.amount);
-                      double reste = t.netToPay - paye;
-                      return DropdownMenuItem(
-                        value: t.invoiceNumber, 
-                        child: Text('${t.invoiceNumber} (Total: ${NumberFormat('#,###').format(t.netToPay)} F | Reste: ${NumberFormat('#,###').format(reste)} F)')
-                      );
-                    }),
+                    ...(() {
+                      // Recalcul des soldes pour le dropdown
+                      double creditTotal = myPayments.fold(0.0, (sum, p) => sum + p.amount);
+                      for (var t in myTransactions) {
+                        if (t.amountPaid > 0) {
+                          bool acompteDansPay = myPayments.any((p) => _isMatchingInvoice(p.invoiceNumber, t.invoiceNumber, p.reference));
+                          if (!acompteDansPay) creditTotal += t.amountPaid;
+                        }
+                      }
+
+                      final sorted = List<AppTransaction>.from(myTransactions);
+                      sorted.sort((a, b) => a.date.compareTo(b.date));
+                      
+                      Map<String, double> restes = {};
+                      double creditDisp = creditTotal;
+                      for (var t in sorted) {
+                        if (creditDisp >= t.netToPay) {
+                          restes[t.id] = 0;
+                          creditDisp -= t.netToPay;
+                        } else {
+                          restes[t.id] = t.netToPay - creditDisp;
+                          creditDisp = 0;
+                        }
+                      }
+
+                      return myTransactions.map((t) {
+                        double reste = restes[t.id] ?? t.netToPay;
+                        return DropdownMenuItem(
+                          value: t.invoiceNumber, 
+                          child: Text('${t.invoiceNumber} (Total: ${NumberFormat('#,###').format(t.netToPay)} F | Reste: ${NumberFormat('#,###').format(reste)} F)')
+                        );
+                      });
+                    })(),
                   ],
                   onChanged: (val) => setDialogState(() => selectedInvoice = val),
                 ),
@@ -238,11 +317,11 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
                     tierId: widget.tier.id,
                     tierName: widget.tier.name,
                     tierType: widget.tier.type,
-                    amount: double.tryParse(amountController.text.replaceAll(' ', '')) ?? 0,
+                    amount: double.tryParse(amountController.text.replaceAll(' ', '').replaceAll(',', '')) ?? 0,
                     date: DateTime.now(),
                     method: mode,
                     reference: motifController.text,
-                    invoiceNumber: selectedInvoice, // On lie le règlement à la facture choisie
+                    invoiceNumber: selectedInvoice,
                   );
                   await service.addPayment(payment, user?.displayName ?? 'Inconnu');
                   if (context.mounted) Navigator.pop(context);

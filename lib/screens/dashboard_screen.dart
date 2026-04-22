@@ -19,6 +19,10 @@ import 'account_list_screen.dart';
 import 'journal_screen.dart';
 import 'user_management_screen.dart';
 import 'statistics_screen.dart';
+import 'daily_closing_screen.dart';
+import 'unpaid_report_screen.dart';
+import 'inventory_report_screen.dart';
+import 'stock_movement_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -99,7 +103,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             _buildDrawerTile(context, Icons.inventory, 'Stocks', Colors.blueGrey, const StockScreen()),
             _buildDrawerTile(context, Icons.warehouse, 'Gestion des Dépôts', Colors.brown, const WarehouseListScreen()),
+            _buildDrawerTile(context, Icons.calculate, 'Inventaire Valorisé', Colors.blue, const InventoryReportScreen()),
+            _buildDrawerTile(context, Icons.swap_vert, 'Mouvements de Stock', Colors.orange, const StockMovementScreen()),
             _buildDrawerTile(context, Icons.payments, 'Règlements', Colors.green, const PaymentScreen()),
+            _buildDrawerTile(context, Icons.money_off, 'État des Impayés', Colors.red, const UnpaidReportScreen()),
+            _buildDrawerTile(context, Icons.lock_clock, 'Clôture de Journée', Colors.red, const DailyClosingScreen()),
             const Divider(),
             if (canViewTiers) ...[
               _buildDrawerTile(context, Icons.people, 'Clients', Colors.indigo, const TierListScreen(type: TierType.client)),

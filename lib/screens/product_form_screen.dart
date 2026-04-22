@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/product.dart';
+import '../models/warehouse.dart';
 import '../services/firestore_service.dart';
 
 class ProductFormScreen extends StatefulWidget {
@@ -20,6 +21,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   late TextEditingController _quantityController;
   late TextEditingController _compteComptableController;
   String _category = 'Divers';
+  Warehouse? _selectedWarehouse;
 
   @override
   void initState() {
@@ -50,11 +52,17 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
               key: _formKey,
               child: ListView(
                 children: [
-                  const Row(
+                  Row(
                     children: [
-                      Icon(Icons.inventory, color: Color(0xFF1A237E)),
-                      SizedBox(width: 8),
-                      Text('INFORMATIONS PRODUIT', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E), letterSpacing: 1.2)),
+                      const Icon(Icons.inventory, color: Color(0xFF1A237E)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'INFORMATIONS PRODUIT', 
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E), letterSpacing: 1.2),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 30),
@@ -85,61 +93,140 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                             maxLines: 2,
                           ),
                           const SizedBox(height: 20),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextFormField(
-                                  controller: _purchasePriceController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Prix d\'achat',
-                                    prefixIcon: Icon(Icons.download),
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  keyboardType: TextInputType.number,
-                                ),
-                              ),
-                              const SizedBox(width: 15),
-                              Expanded(
-                                child: TextFormField(
-                                  controller: _sellingPriceController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Prix de vente',
-                                    prefixIcon: Icon(Icons.upload),
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  keyboardType: TextInputType.number,
-                                ),
-                              ),
-                            ],
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              bool isMobile = constraints.maxWidth < 500;
+                              return isMobile 
+                                ? Column(
+                                    children: [
+                                      TextFormField(
+                                        controller: _purchasePriceController,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Prix d\'achat',
+                                          prefixIcon: Icon(Icons.download),
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        keyboardType: TextInputType.number,
+                                      ),
+                                      const SizedBox(height: 20),
+                                      TextFormField(
+                                        controller: _sellingPriceController,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Prix de vente',
+                                          prefixIcon: Icon(Icons.upload),
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        keyboardType: TextInputType.number,
+                                      ),
+                                    ],
+                                  )
+                                : Row(
+                                    children: [
+                                      Expanded(
+                                        child: TextFormField(
+                                          controller: _purchasePriceController,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Prix d\'achat',
+                                            prefixIcon: Icon(Icons.download),
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          keyboardType: TextInputType.number,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 15),
+                                      Expanded(
+                                        child: TextFormField(
+                                          controller: _sellingPriceController,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Prix de vente',
+                                            prefixIcon: Icon(Icons.upload),
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          keyboardType: TextInputType.number,
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                            }
                           ),
                           const SizedBox(height: 20),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextFormField(
-                                  controller: _quantityController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Stock Initial',
-                                    prefixIcon: Icon(Icons.storage),
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  keyboardType: TextInputType.number,
-                                ),
-                              ),
-                              const SizedBox(width: 15),
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  value: _category,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Catégorie',
-                                    prefixIcon: Icon(Icons.category),
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  items: ['Divers', 'Pièces', 'Huiles'].map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-                                  onChanged: (val) => setState(() => _category = val!),
-                                ),
-                              ),
-                            ],
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              bool isMobile = constraints.maxWidth < 500;
+                              return isMobile
+                                ? Column(
+                                    children: [
+                                      TextFormField(
+                                        controller: _quantityController,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Stock Initial',
+                                          prefixIcon: Icon(Icons.storage),
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        keyboardType: TextInputType.number,
+                                      ),
+                                      const SizedBox(height: 20),
+                                      DropdownButtonFormField<String>(
+                                        value: _category,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Catégorie',
+                                          prefixIcon: Icon(Icons.category),
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        items: ['Divers', 'Pièces', 'Huiles'].map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                                        onChanged: (val) => setState(() => _category = val!),
+                                      ),
+                                      if (widget.product == null) ...[
+                                        const SizedBox(height: 20),
+                                        StreamBuilder<List<Warehouse>>(
+                                          stream: context.read<FirestoreService>().getWarehouses(),
+                                          builder: (context, snapshot) {
+                                            final warehouses = snapshot.data ?? [];
+                                            return DropdownButtonFormField<Warehouse>(
+                                              value: _selectedWarehouse,
+                                              decoration: const InputDecoration(
+                                                labelText: 'Dépôt de stockage initial',
+                                                prefixIcon: Icon(Icons.warehouse),
+                                                border: OutlineInputBorder(),
+                                              ),
+                                              items: warehouses.map((w) => DropdownMenuItem(value: w, child: Text(w.name))).toList(),
+                                              onChanged: (val) => setState(() => _selectedWarehouse = val),
+                                              validator: (val) => (int.tryParse(_quantityController.text) ?? 0) > 0 && val == null ? 'Dépôt requis pour le stock initial' : null,
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ],
+                                  )
+                                : Row(
+                                    children: [
+                                      Expanded(
+                                        child: TextFormField(
+                                          controller: _quantityController,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Stock Initial',
+                                            prefixIcon: Icon(Icons.storage),
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          keyboardType: TextInputType.number,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 15),
+                                      Expanded(
+                                        child: DropdownButtonFormField<String>(
+                                          value: _category,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Catégorie',
+                                            prefixIcon: Icon(Icons.category),
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          items: ['Divers', 'Pièces', 'Huiles'].map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                                          onChanged: (val) => setState(() => _category = val!),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                            }
                           ),
                           const SizedBox(height: 20),
                           TextFormField(
@@ -174,7 +261,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                           );
                           
                           if (widget.product == null) {
-                            await context.read<FirestoreService>().addProduct(product);
+                            await context.read<FirestoreService>().addProduct(product, warehouseId: _selectedWarehouse?.id);
                           } else {
                             await context.read<FirestoreService>().updateProduct(product);
                           }

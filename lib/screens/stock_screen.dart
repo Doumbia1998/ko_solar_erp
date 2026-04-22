@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/firestore_service.dart';
 import '../models/product.dart';
-import '../models/stock_transfer.dart';
+import '../models/warehouse.dart';
 import 'product_form_screen.dart';
 import 'product_detail_screen.dart';
 import 'stock_transfer_screen.dart';
@@ -41,10 +41,10 @@ class _StockScreenState extends State<StockScreen> {
                 products = products.where((p) => p.name.toLowerCase().contains(_searchQuery)).toList();
               }
 
-              return StreamBuilder<List<StockTransfer>>(
-                stream: firestoreService.getStockTransfers(),
-                builder: (context, transferSnapshot) {
-                  final allTransfers = transferSnapshot.data ?? [];
+              return StreamBuilder<List<Warehouse>>(
+                stream: firestoreService.getWarehouses(),
+                builder: (context, warehouseSnapshot) {
+                  final warehouses = warehouseSnapshot.data ?? [];
 
                   return Column(
                     children: [
@@ -68,54 +68,75 @@ class _StockScreenState extends State<StockScreen> {
                           itemBuilder: (context, index) {
                             final product = products[index];
                             
-                            // Filtrer les transferts pour ce produit spécifique
-                            final productTransfers = allTransfers.where((t) => t.productId == product.id).toList();
-                            Set<String> depots = {"Dépôt Central"};
-                            for (var t in productTransfers) {
-                              depots.add(t.toWarehouseName);
-                            }
-
-                            return Card(
-                              elevation: 2,
-                              margin: const EdgeInsets.only(bottom: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              child: ListTile(
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('PU: ${product.sellingPrice} FCFA | Caté: ${product.category}'),
-                                    Text('Lieux: ${depots.join(', ')}', 
-                                      style: TextStyle(color: Colors.blue.shade900, fontWeight: FontWeight.bold, fontSize: 11)),
-                                  ],
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Text('${product.totalQuantity}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.blue)),
-                                        const Text('en stock', style: TextStyle(fontSize: 10)),
-                                      ],
+                            return FutureBuilder<Map<String, int>>(
+                              future: _getProductStocks(firestoreService, product.id, warehouses),
+                              builder: (context, stockSnapshot) {
+                                final stockMap = stockSnapshot.data ?? {};
+                                
+                                return Card(
+                                  elevation: 2,
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  child: ExpansionTile(
+                                    leading: CircleAvatar(
+                                      backgroundColor: Colors.blue.shade50,
+                                      child: Text('${product.totalQuantity}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                     ),
-                                    if (!widget.isSelectionMode)
-                                      IconButton(
-                                        icon: const Icon(Icons.edit, color: Colors.blue),
-                                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => ProductFormScreen(product: product))),
-                                      ),
-                                    const Icon(Icons.chevron_right),
-                                  ],
-                                ),
-                                onTap: () {
-                                  if (widget.isSelectionMode) {
-                                    Navigator.pop(context, product);
-                                  } else {
-                                    Navigator.push(context, MaterialPageRoute(builder: (context) => ProductDetailScreen(product: product)));
-                                  }
-                                },
-                              ),
+                                    title: Text(product.name.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                    subtitle: Text('PU: ${product.sellingPrice} FCFA | ${product.category}', style: const TextStyle(fontSize: 12)),
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.all(12.0),
+                                        child: Column(
+                                          children: [
+                                            const Divider(),
+                                            ...warehouses.map((w) {
+                                              int qty = stockMap[w.id] ?? 0;
+                                              return Padding(
+                                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                                child: Row(
+                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                  children: [
+                                                    Row(
+                                                      children: [
+                                                        const Icon(Icons.warehouse, size: 16, color: Colors.grey),
+                                                        const SizedBox(width: 8),
+                                                        Text(w.name, style: const TextStyle(fontSize: 13)),
+                                                      ],
+                                                    ),
+                                                    Text('$qty', style: TextStyle(fontWeight: FontWeight.bold, color: qty > 0 ? Colors.blue : Colors.red)),
+                                                  ],
+                                                ),
+                                              );
+                                            }),
+                                            const SizedBox(height: 10),
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.end,
+                                              children: [
+                                                TextButton.icon(
+                                                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => ProductFormScreen(product: product))),
+                                                  icon: const Icon(Icons.edit, size: 16),
+                                                  label: const Text('Modifier'),
+                                                ),
+                                                TextButton.icon(
+                                                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => ProductDetailScreen(product: product))),
+                                                  icon: const Icon(Icons.history, size: 16),
+                                                  label: const Text('Détails'),
+                                                ),
+                                                if (widget.isSelectionMode)
+                                                  ElevatedButton(
+                                                    onPressed: () => Navigator.pop(context, product),
+                                                    child: const Text('SÉLECTIONNER'),
+                                                  ),
+                                              ],
+                                            )
+                                          ],
+                                        ),
+                                      )
+                                    ],
+                                  ),
+                                );
+                              },
                             );
                           },
                         ),
@@ -133,7 +154,7 @@ class _StockScreenState extends State<StockScreen> {
         children: [
           FloatingActionButton(
             heroTag: "transfer",
-            onPressed: () => _showTransferDialog(context, firestoreService),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const StockTransferScreen())),
             backgroundColor: Colors.orange,
             child: const Icon(Icons.swap_horiz, color: Colors.white),
           ),
@@ -149,7 +170,12 @@ class _StockScreenState extends State<StockScreen> {
     );
   }
 
-  void _showTransferDialog(BuildContext context, FirestoreService service) {
-    Navigator.push(context, MaterialPageRoute(builder: (context) => const StockTransferScreen()));
+  Future<Map<String, int>> _getProductStocks(FirestoreService service, String productId, List<Warehouse> warehouses) async {
+    Map<String, int> stockMap = {};
+    for (var w in warehouses) {
+      int qty = await service.getWarehouseStock(productId, w.id);
+      stockMap[w.id] = qty;
+    }
+    return stockMap;
   }
 }

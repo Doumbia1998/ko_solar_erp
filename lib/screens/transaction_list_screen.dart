@@ -20,11 +20,17 @@ class TransactionListScreen extends StatefulWidget {
 class _TransactionListScreenState extends State<TransactionListScreen> {
   String _searchQuery = "";
   AppUser? _currentUser;
+  DateTimeRange? _selectedDateRange;
 
   @override
   void initState() {
     super.initState();
     _loadUser();
+    // Par défaut, voir les 30 derniers jours
+    _selectedDateRange = DateTimeRange(
+      start: DateTime.now().subtract(const Duration(days: 30)),
+      end: DateTime.now(),
+    );
   }
 
   Future<void> _loadUser() async {
@@ -57,12 +63,25 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.date_range, color: Colors.black),
+            onPressed: _pickDateRange,
+          ),
+        ],
       ),
       body: Center(
         child: Container(
           constraints: const BoxConstraints(maxWidth: 1000),
           child: Column(
             children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Text(
+                  "Période : ${DateFormat('dd/MM/yy').format(_selectedDateRange!.start)} au ${DateFormat('dd/MM/yy').format(_selectedDateRange!.end)}",
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.bold),
+                ),
+              ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: TextField(
@@ -77,45 +96,60 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
               StreamBuilder<List<AppTransaction>>(
                 stream: firestoreService.getTransactions(type: widget.type),
                 builder: (context, snapshot) {
-                  final transactions = snapshot.data ?? [];
-                  double total = transactions.fold(0.0, (sum, t) => sum + t.totalHT);
+                  var transactions = snapshot.data ?? [];
+                  
+                  // Filtrage par date
+                  transactions = transactions.where((t) => 
+                    t.date.isAfter(_selectedDateRange!.start.subtract(const Duration(days: 1))) &&
+                    t.date.isBefore(_selectedDateRange!.end.add(const Duration(days: 1)))
+                  ).toList();
+
+                  double total = transactions.fold(0.0, (sum, t) => sum + t.netToPay);
                   return Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
                     margin: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: color,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(12),
                       boxShadow: [
-                        BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5))
+                        BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 10, offset: const Offset(0, 5))
                       ],
                     ),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        return Wrap(
-                          alignment: WrapAlignment.spaceBetween,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          runSpacing: 8, // Espace entre les lignes si ça wrap
-                          children: [
-                            Text(
-                              isSale ? 'TOTAL CA VENTES' : 'TOTAL ACHATS',
-                              style: const TextStyle(
-                                color: Colors.white, 
-                                fontWeight: FontWeight.bold, 
-                                fontSize: 16
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                isSale ? 'TOTAL CA VENTES' : 'TOTAL ACHATS',
+                                style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 13),
                               ),
-                            ),
-                        Text(
-                          '${_formatAmount(total)} FCFA',
-                          style: const TextStyle(
-                            color: Colors.yellow, 
-                            fontWeight: FontWeight.bold, 
-                            fontSize: 20
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  '${_formatAmount(total)} FCFA',
+                                  style: const TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold, fontSize: 24),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                          ],
-                        );
-                      }
+                        IconButton(
+                          icon: const Icon(Icons.picture_as_pdf, color: Colors.white, size: 30),
+                          onPressed: () {
+                            PdfService.generateGlobalTransactionReport(
+                              type: isSale ? 'Vente' : 'Achat',
+                              start: DateTime.now().subtract(const Duration(days: 30)), // Par défaut 30 jours
+                              end: DateTime.now(),
+                              transactions: transactions,
+                            );
+                          },
+                        ),
+                      ],
                     ),
                   );
                 },
@@ -127,6 +161,13 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                     if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
                     
                     var transactions = snapshot.data ?? [];
+
+                    // Filtrage par date
+                    transactions = transactions.where((t) => 
+                      t.date.isAfter(_selectedDateRange!.start.subtract(const Duration(days: 1))) &&
+                      t.date.isBefore(_selectedDateRange!.end.add(const Duration(days: 1)))
+                    ).toList();
+
                     if (_searchQuery.isNotEmpty) {
                       transactions = transactions.where((t) => 
                         t.tierName.toLowerCase().contains(_searchQuery) || 
@@ -170,6 +211,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
   }
 
   Widget _buildDesktopItem(AppTransaction t, Color color, bool isSale, bool isAdminOrManager, FirestoreService firestoreService) {
+    final isSmallDesktop = MediaQuery.of(context).size.width < 900;
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       leading: Container(
@@ -192,101 +234,110 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
           ),
         ],
       ),
-      trailing: Wrap(
-        spacing: 8,
-        children: [
-          Text(
-            '${_formatAmount(t.totalHT)} F',
-            style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 16),
-          ),
-          if (isAdminOrManager)
-            IconButton(
-              icon: const Icon(Icons.edit, color: Colors.blue, size: 22), 
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => TransactionFormScreen(type: widget.type, transaction: t))),
+      trailing: SizedBox(
+        width: isSmallDesktop ? 160 : 220, // Ajusté pour éviter l'overflow sur desktop étroit
+        child: Wrap(
+          spacing: 0,
+          alignment: WrapAlignment.end,
+          children: [
+            Text(
+              '${_formatAmount(t.totalHT)} F',
+              style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 14),
             ),
-          IconButton(icon: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 22), onPressed: () => PdfService.generateInvoice(t)),
-          if (isAdminOrManager)
-            IconButton(
-              icon: Icon(
-                Icons.account_balance, 
-                color: t.isPosted ? Colors.grey : Colors.teal, 
-                size: 22
+            if (isAdminOrManager)
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.edit, color: Colors.blue, size: 20), 
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => TransactionFormScreen(type: widget.type, transaction: t))),
               ),
-              tooltip: t.isPosted ? 'Déjà comptabilisé' : 'Comptabiliser',
-              onPressed: t.isPosted ? null : () => _transferToAccounting(context, firestoreService, t),
-            ),
-          if (isAdminOrManager)
             IconButton(
-              icon: const Icon(Icons.delete, color: Colors.red, size: 22),
-              onPressed: () => _confirmDelete(context, () => firestoreService.deleteTransaction(t.id)),
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 20), 
+              onPressed: () => PdfService.generateInvoice(t)
             ),
-        ],
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.local_shipping, color: Colors.blueGrey, size: 20), 
+              onPressed: () => PdfService.generateDeliveryNote(t)
+            ),
+            if (isAdminOrManager)
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.account_balance, color: t.isPosted ? Colors.grey : Colors.teal, size: 20),
+                onPressed: t.isPosted ? null : () => _transferToAccounting(context, firestoreService, t),
+              ),
+            if (isAdminOrManager)
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                onPressed: () => _confirmDelete(context, () => firestoreService.deleteTransaction(t.id)),
+              ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildMobileItem(AppTransaction t, Color color, bool isSale, bool isAdminOrManager, FirestoreService firestoreService) {
     return Padding(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
-                child: Icon(isSale ? Icons.shopping_bag : Icons.shopping_cart, color: color, size: 20),
-              ),
-              const SizedBox(width: 12),
+              Icon(isSale ? Icons.shopping_bag : Icons.shopping_cart, color: color, size: 20),
+              const SizedBox(width: 8),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('${isSale ? "Vente" : "Achat"} ${t.invoiceNumber}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                    Text(t.tierName.toUpperCase(), style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w600, fontSize: 13)),
-                  ],
-                ),
+                child: Text('${t.invoiceNumber} - ${t.tierName.toUpperCase()}', 
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  overflow: TextOverflow.ellipsis),
               ),
-              Text(
-                '${NumberFormat('#,###').format(t.totalHT)} F',
-                style: TextStyle(fontWeight: FontWeight.bold, color: color),
-              ),
+              const SizedBox(width: 5),
+              Text('${_formatAmount(t.totalHT)} F', style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 15)),
             ],
           ),
-          const Divider(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(DateFormat('dd/MM/yy HH:mm').format(t.date), style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                  if (t.createdBy.isNotEmpty)
-                    Text('Fait par: ${t.createdBy}', style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.blueGrey)),
-                ],
-              ),
-              Row(
-                children: [
-                  if (isAdminOrManager)
+          const Divider(height: 12),
+          FittedBox( // Empêche l'overflow en réduisant la taille si nécessaire
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(DateFormat('dd/MM/yy HH:mm').format(t.date), style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                const SizedBox(width: 10),
+                Row(
+                  children: [
+                    if (isAdminOrManager)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.edit, color: Colors.blue, size: 18), 
+                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => TransactionFormScreen(type: widget.type, transaction: t))),
+                      ),
                     IconButton(
-                      icon: const Icon(Icons.edit, color: Colors.blue, size: 20), 
-                      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => TransactionFormScreen(type: widget.type, transaction: t))),
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 18), 
+                      onPressed: () => PdfService.generateInvoice(t)
                     ),
-                  IconButton(icon: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 20), onPressed: () => PdfService.generateInvoice(t)),
-                  if (isAdminOrManager)
                     IconButton(
-                      icon: Icon(Icons.account_balance, color: t.isPosted ? Colors.grey : Colors.teal, size: 20),
-                      onPressed: t.isPosted ? null : () => _transferToAccounting(context, firestoreService, t),
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.local_shipping, color: Colors.blueGrey, size: 18), 
+                      onPressed: () => PdfService.generateDeliveryNote(t)
                     ),
-                  if (isAdminOrManager)
-                    IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                      onPressed: () => _confirmDelete(context, () => firestoreService.deleteTransaction(t.id)),
-                    ),
-                ],
-              ),
-            ],
+                    if (isAdminOrManager)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: Icon(Icons.account_balance, color: t.isPosted ? Colors.grey : Colors.teal, size: 18),
+                        onPressed: t.isPosted ? null : () => _transferToAccounting(context, firestoreService, t),
+                      ),
+                    if (isAdminOrManager)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.delete, color: Colors.red, size: 18),
+                        onPressed: () => _confirmDelete(context, () => firestoreService.deleteTransaction(t.id)),
+                      ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -330,5 +381,15 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _pickDateRange() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      initialDateRange: _selectedDateRange,
+    );
+    if (picked != null) setState(() => _selectedDateRange = picked);
   }
 }

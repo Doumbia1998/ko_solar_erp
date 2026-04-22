@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../services/firestore_service.dart';
+import '../services/pdf_service.dart';
 import '../models/transaction.dart';
 import '../models/product.dart';
 
@@ -77,6 +78,33 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               double margeBrute = totalCA - totalCoutAchat;
               double pourcentageMarge = totalCA > 0 ? (margeBrute / totalCA) * 100 : 0;
 
+              // Calcul des stats par produit pour le PDF
+              Map<String, Map<String, dynamic>> productStatsMap = {};
+              for (var sale in sales) {
+                for (var item in sale.items) {
+                  final prod = productMap[item.productId];
+                  if (prod != null) {
+                    final current = productStatsMap[prod.id] ?? {
+                      'name': prod.name,
+                      'qty': 0.0,
+                      'ca': 0.0,
+                      'cost': 0.0,
+                    };
+                    current['qty'] += item.quantity;
+                    current['ca'] += (item.quantity * item.unitPrice) - item.discount;
+                    current['cost'] += (prod.purchasePrice * item.quantity);
+                    productStatsMap[prod.id] = current;
+                  }
+                }
+              }
+
+              final productStats = productStatsMap.values.map((s) {
+                return {
+                  ...s,
+                  'margin': s['ca'] - s['cost'],
+                };
+              }).toList();
+
               return SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -93,6 +121,21 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                       margeBrute >= 0 ? Colors.green : Colors.red,
                       isBold: true,
                       subtitle: 'Soit ${pourcentageMarge.toStringAsFixed(1)}% de rentabilité'
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1A237E), foregroundColor: Colors.white),
+                      icon: const Icon(Icons.picture_as_pdf),
+                      label: const Text('Générer Rapport Détaillé PDF'),
+                      onPressed: () => PdfService.generateProfitReport(
+                        start: _selectedDateRange!.start,
+                        end: _selectedDateRange!.end,
+                        totalCA: totalCA,
+                        totalCout: totalCoutAchat,
+                        marge: margeBrute,
+                        pourcentage: pourcentageMarge,
+                        productStats: productStats,
+                      ),
                     ),
                   ],
                 ),

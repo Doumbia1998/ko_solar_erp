@@ -8,6 +8,7 @@ import '../models/payment.dart';
 import '../models/account.dart';
 import '../models/stock_transfer.dart';
 import '../models/journal_entry.dart';
+import '../models/daily_closing.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -36,9 +37,54 @@ class FirestoreService {
 
   Future<void> addStockTransfer(StockTransfer t) async {
     WriteBatch batch = _db.batch();
+    
+    // 1. Enregistrer l'historique du transfert
     DocumentReference ref = _db.collection('stock_transfers').doc();
     batch.set(ref, t.toMap());
+
+    // 2. Mettre à jour le stock du dépôt SOURCE (Soustraction)
+    DocumentReference sourceRef = _db.collection('stocks').doc('${t.fromWarehouseId}_${t.productId}');
+    batch.set(sourceRef, {
+      'warehouseId': t.fromWarehouseId,
+      'productId': t.productId,
+      'quantity': FieldValue.increment(-t.quantity)
+    }, SetOptions(merge: true));
+
+    // 3. Mettre à jour le stock du dépôt DESTINATION (Addition)
+    DocumentReference targetRef = _db.collection('stocks').doc('${t.toWarehouseId}_${t.productId}');
+    batch.set(targetRef, {
+      'warehouseId': t.toWarehouseId,
+      'productId': t.productId,
+      'quantity': FieldValue.increment(t.quantity)
+    }, SetOptions(merge: true));
+
     return batch.commit();
+  }
+
+  // Obtenir le stock d'un produit dans un dépôt spécifique (Répartition réelle et stricte)
+  Future<int> getWarehouseStock(String productId, String warehouseId) async {
+    // 1. On cherche l'entrée précise pour ce dépôt et ce produit
+    final stockDoc = await _db.collection('stocks').doc('${warehouseId}_${productId}').get();
+    
+    if (stockDoc.exists) {
+      return (stockDoc.data()?['quantity'] as num?)?.toInt() ?? 0;
+    }
+
+    // 2. Si aucune entrée n'existe, on vérifie si c'est le "Dépôt Principal"
+    final warehouseDoc = await _db.collection('warehouses').doc(warehouseId).get();
+    String wName = warehouseDoc.data()?['name']?.toString().toLowerCase() ?? '';
+    bool isPrincipal = wName.contains('principal');
+
+    if (isPrincipal) {
+      // Si rien n'est ventilé ailleurs, tout est au principal
+      final allAllocated = await _db.collection('stocks').where('productId', isEqualTo: productId).get();
+      if (allAllocated.docs.isEmpty) {
+        final productDoc = await _db.collection('products').doc(productId).get();
+        return (productDoc.data()?['totalQuantity'] as num?)?.toInt() ?? 0;
+      }
+    }
+
+    return 0;
   }
 
   // Méthode utilitaire pour convertir les dates en toute sécurité
@@ -53,7 +99,18 @@ class FirestoreService {
     return _db.collection('products').snapshots().map((snap) =>
         snap.docs.map((doc) => Product.fromMap(doc.data(), doc.id)).toList());
   }
-  Future<void> addProduct(Product p) => _db.collection('products').add(p.toMap());
+  Future<void> addProduct(Product p, {String? warehouseId}) async {
+    DocumentReference ref = await _db.collection('products').add(p.toMap());
+    
+    // Si un dépôt est spécifié et qu'il y a un stock initial, on crée l'entrée de stock
+    if (warehouseId != null && p.totalQuantity > 0) {
+      await _db.collection('stocks').doc('${warehouseId}_${ref.id}').set({
+        'warehouseId': warehouseId,
+        'productId': ref.id,
+        'quantity': p.totalQuantity
+      });
+    }
+  }
   Future<void> updateProduct(Product p) => _db.collection('products').doc(p.id).update(p.toMap());
   Future<void> deleteProduct(String id) async {
     // Vérifier si le produit est utilisé dans des transactions
@@ -102,11 +159,20 @@ class FirestoreService {
     
     batch.set(ref, data);
 
-    // 1. Mise à jour du stock
+    // 1. Mise à jour du stock global et local (par dépôt)
     for (var item in t.items) {
+      // Stock Global
       DocumentReference pRef = _db.collection('products').doc(item.productId);
       int change = t.type == TransactionType.sale ? -item.quantity : item.quantity;
       batch.update(pRef, {'totalQuantity': FieldValue.increment(change)});
+
+      // Stock Local au Dépôt
+      DocumentReference sRef = _db.collection('stocks').doc('${t.warehouseId}_${item.productId}');
+      batch.set(sRef, {
+        'warehouseId': t.warehouseId,
+        'productId': item.productId,
+        'quantity': FieldValue.increment(change)
+      }, SetOptions(merge: true));
     }
 
     // 2. Écritures Comptables Automatiques (SYSCOHADA)
@@ -151,6 +217,7 @@ class FirestoreService {
         'date': Timestamp.fromDate(t.date),
         'method': t.paymentMethod,
         'reference': 'Acompte ${t.invoiceNumber}',
+        'invoiceNumber': t.invoiceNumber,
         'createdBy': userName,
       });
 
@@ -183,21 +250,64 @@ class FirestoreService {
   Future<void> updateTransaction(AppTransaction newTx, AppTransaction oldTx) async {
     WriteBatch batch = _db.batch();
     
-    // 1. Annuler l'ancien impact sur le stock
+    // 1. Annuler l'ancien impact sur le stock (Global + Local)
     for (var item in oldTx.items) {
       DocumentReference pRef = _db.collection('products').doc(item.productId);
       int reverseChange = oldTx.type == TransactionType.sale ? item.quantity : -item.quantity;
       batch.update(pRef, {'totalQuantity': FieldValue.increment(reverseChange)});
+
+      DocumentReference sRef = _db.collection('stocks').doc('${oldTx.warehouseId}_${item.productId}');
+      batch.set(sRef, {
+        'quantity': FieldValue.increment(reverseChange)
+      }, SetOptions(merge: true));
     }
 
-    // 2. Appliquer le nouvel impact sur le stock
+    // 2. Appliquer le nouvel impact sur le stock (Global + Local)
     for (var item in newTx.items) {
       DocumentReference pRef = _db.collection('products').doc(item.productId);
       int newChange = newTx.type == TransactionType.sale ? -item.quantity : item.quantity;
       batch.update(pRef, {'totalQuantity': FieldValue.increment(newChange)});
+
+      DocumentReference sRef = _db.collection('stocks').doc('${newTx.warehouseId}_${item.productId}');
+      batch.set(sRef, {
+        'warehouseId': newTx.warehouseId,
+        'productId': item.productId,
+        'quantity': FieldValue.increment(newChange)
+      }, SetOptions(merge: true));
     }
 
-    // 3. Mettre à jour la transaction
+    // 3. Supprimer les anciennes écritures comptables
+    final journals = await _db.collection('journal').where('reference', isEqualTo: oldTx.invoiceNumber).get();
+    for (var doc in journals.docs) {
+      batch.delete(doc.reference);
+    }
+
+    // 4. Recréer les écritures comptables (Copie de la logique addTransaction)
+    final String journal = newTx.type == TransactionType.sale ? 'VEN' : 'ACH';
+    final String tierAccount = newTx.type == TransactionType.sale ? '411100' : '401100';
+    final String tierLabel = newTx.type == TransactionType.sale ? 'Clients' : 'Fournisseurs';
+    final String htAccount = newTx.type == TransactionType.sale ? '701100' : '601100';
+    final String htLabel = newTx.type == TransactionType.sale ? 'Ventes de marchandises' : 'Achats de marchandises';
+
+    DocumentReference j1 = _db.collection('journal').doc();
+    batch.set(j1, JournalEntry(
+      id: '', date: newTx.date, reference: newTx.invoiceNumber, journalCode: journal,
+      label: '${newTx.type == TransactionType.sale ? "Vente" : "Achat"} - ${newTx.tierName}',
+      accountCode: tierAccount, accountLabel: tierLabel,
+      debit: newTx.type == TransactionType.sale ? newTx.totalHT : 0,
+      credit: newTx.type == TransactionType.sale ? 0 : newTx.totalHT,
+    ).toMap());
+
+    DocumentReference j2 = _db.collection('journal').doc();
+    batch.set(j2, JournalEntry(
+      id: '', date: newTx.date, reference: newTx.invoiceNumber, journalCode: journal,
+      label: '${newTx.type == TransactionType.sale ? "Vente" : "Achat"} - ${newTx.tierName}',
+      accountCode: htAccount, accountLabel: htLabel,
+      debit: newTx.type == TransactionType.sale ? 0 : newTx.totalHT,
+      credit: newTx.type == TransactionType.sale ? newTx.totalHT : 0,
+    ).toMap());
+
+    // 5. Mettre à jour la transaction
     batch.update(_db.collection('transactions').doc(newTx.id), newTx.toMap());
     
     return batch.commit();
@@ -211,19 +321,43 @@ class FirestoreService {
     if (!txDoc.exists) return;
     
     final txData = txDoc.data() as Map<String, dynamic>;
+    if (txData['isPosted'] == true) {
+      throw Exception("Impossible de supprimer une facture déjà comptabilisée (Validée).");
+    }
+    
     final double amountPaid = (txData['amountPaid'] as num?)?.toDouble() ?? 0;
     
     if (amountPaid > 0) {
-      throw Exception("Cette facture contient un acompte. Veuillez d'abord supprimer le règlement associé dans le module Règlements.");
+      // Vérifier si un paiement correspondant existe réellement dans la collection payments
+      final tx = AppTransaction.fromMap(txData, id);
+      final paymentsSnap = await _db.collection('payments')
+          .where('tierId', isEqualTo: tx.tierId)
+          .where('invoiceNumber', isEqualTo: tx.invoiceNumber)
+          .get();
+      
+      if (paymentsSnap.docs.isNotEmpty) {
+        throw Exception("Cette facture contient un règlement. Veuillez d'abord supprimer le règlement associé dans l'historique du client.");
+      }
     }
 
-    // 2. Annuler l'impact sur le stock avant de supprimer
+    // 2. Annuler l'impact sur le stock (Global + Local) avant de supprimer
     final tx = AppTransaction.fromMap(txData, id);
     WriteBatch batch = _db.batch();
     for (var item in tx.items) {
       DocumentReference pRef = _db.collection('products').doc(item.productId);
       int reverseChange = tx.type == TransactionType.sale ? item.quantity : -item.quantity;
       batch.update(pRef, {'totalQuantity': FieldValue.increment(reverseChange)});
+
+      DocumentReference sRef = _db.collection('stocks').doc('${tx.warehouseId}_${item.productId}');
+      batch.set(sRef, {
+        'quantity': FieldValue.increment(reverseChange)
+      }, SetOptions(merge: true));
+    }
+
+    // 3. Supprimer les écritures comptables liées
+    final journals = await _db.collection('journal').where('reference', isEqualTo: tx.invoiceNumber).get();
+    for (var doc in journals.docs) {
+      batch.delete(doc.reference);
     }
     
     batch.delete(_db.collection('transactions').doc(id));
@@ -293,4 +427,100 @@ class FirestoreService {
     
   Future<void> updatePaymentStatus(String id, bool isPosted) => 
     _db.collection('payments').doc(id).update({'isPosted': isPosted});
+
+  // --- CLÔTURE DE JOURNÉE ---
+  Future<void> performDailyClosing(DailyClosing closing) async {
+    WriteBatch batch = _db.batch();
+    
+    // 1. Enregistrer la clôture
+    DocumentReference ref = _db.collection('closings').doc();
+    batch.set(ref, closing.toMap());
+
+    // 2. Verrouiller toutes les transactions de la journée
+    DateTime startOfDay = DateTime(closing.date.year, closing.date.month, closing.date.day);
+    DateTime endOfDay = startOfDay.add(const Duration(days: 1));
+
+    final txs = await _db.collection('transactions')
+        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+        .where('date', isLessThan: Timestamp.fromDate(endOfDay))
+        .get();
+    
+    for (var doc in txs.docs) {
+      batch.update(doc.reference, {'isPosted': true});
+    }
+
+    // 3. Verrouiller tous les paiements de la journée
+    final payments = await _db.collection('payments')
+        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+        .where('date', isLessThan: Timestamp.fromDate(endOfDay))
+        .get();
+
+    for (var doc in payments.docs) {
+      batch.update(doc.reference, {'isPosted': true});
+    }
+
+    return batch.commit();
+  }
+
+  Stream<List<DailyClosing>> getClosings() {
+    return _db.collection('closings').orderBy('date', descending: true).snapshots().map((snap) =>
+        snap.docs.map((doc) => DailyClosing.fromMap(doc.data(), doc.id)).toList());
+  }
+
+  // --- RECHERCHE IMPAYÉS ---
+  Future<List<Map<String, dynamic>>> getUnpaidTransactionsWithDetails({
+    required TransactionType type,
+    required DateTime start,
+    required DateTime end,
+    String? specificTierId,
+  }) async {
+    // 1. Récupérer les transactions
+    Query query = _db.collection('transactions').where('type', isEqualTo: type.toString().split('.').last);
+    
+    final txSnap = await query.get();
+    List<AppTransaction> transactions = txSnap.docs
+        .map((doc) => AppTransaction.fromMap(doc.data() as Map<String, dynamic>, doc.id))
+        .where((t) => t.date.isAfter(start.subtract(const Duration(seconds: 1))) && 
+                      t.date.isBefore(end.add(const Duration(days: 1))))
+        .toList();
+
+    if (specificTierId != null) {
+      transactions = transactions.where((t) => t.tierId == specificTierId).toList();
+    }
+
+    // 2. Récupérer TOUS les paiements pour ces transactions ou ces tiers
+    final paySnap = await _db.collection('payments').get();
+    List<Payment> allPayments = paySnap.docs.map((doc) => Payment.fromMap(doc.data(), doc.id)).toList();
+
+    List<Map<String, dynamic>> results = [];
+
+    for (var t in transactions) {
+      // Les règlements ultérieurs (qui ne sont pas l'acompte initial déjà dans t.amountPaid)
+      // OU on prend tous les paiements liés à la facture dans la collection payments
+      // La méthode la plus sûre : Net à Payer - Somme de TOUS les paiements liés au invoiceNumber
+      
+      double totalPaidOnInvoice = allPayments
+          .where((p) => p.invoiceNumber == t.invoiceNumber)
+          .fold(0.0, (sum, p) => sum + p.amount);
+      
+      // Si par hasard des paiements n'ont pas de invoiceNumber mais sont de l'acompte (ancien système)
+      // on s'assure de ne pas descendre en dessous de t.amountPaid
+      if (totalPaidOnInvoice < t.amountPaid) {
+        totalPaidOnInvoice = t.amountPaid;
+      }
+      
+      double remaining = t.netToPay - totalPaidOnInvoice;
+
+      // On affiche seulement si il reste plus de 10 FCFA (pour éviter les résidus de virgules)
+      if (remaining > 10) {
+        results.add({
+          'transaction': t,
+          'totalPaid': totalPaidOnInvoice,
+          'remaining': remaining,
+        });
+      }
+    }
+
+    return results;
+  }
 }
