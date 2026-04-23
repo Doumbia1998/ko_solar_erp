@@ -467,60 +467,64 @@ class FirestoreService {
         snap.docs.map((doc) => DailyClosing.fromMap(doc.data(), doc.id)).toList());
   }
 
-  // --- RECHERCHE IMPAYÉS ---
-  Future<List<Map<String, dynamic>>> getUnpaidTransactionsWithDetails({
-    required TransactionType type,
+  // --- LOGIQUE DE SOLDE UNIFIÉE (Source de vérité) ---
+  Future<List<Map<String, dynamic>>> getUnpaidReport({
+    required TierType tierType,
     required DateTime start,
     required DateTime end,
-    String? specificTierId,
   }) async {
-    // 1. Récupérer les transactions
-    Query query = _db.collection('transactions').where('type', isEqualTo: type.toString().split('.').last);
+    final transType = tierType == TierType.client ? TransactionType.sale : TransactionType.purchase;
     
-    final txSnap = await query.get();
-    List<AppTransaction> transactions = txSnap.docs
-        .map((doc) => AppTransaction.fromMap(doc.data() as Map<String, dynamic>, doc.id))
-        .where((t) => t.date.isAfter(start.subtract(const Duration(seconds: 1))) && 
-                      t.date.isBefore(end.add(const Duration(days: 1))))
-        .toList();
+    // 1. Récupérer TOUT l'historique sans limite de date pour le calcul du crédit
+    final allTxsSnap = await _db.collection('transactions')
+        .where('type', isEqualTo: transType.toString().split('.').last)
+        .get();
+    final allPaysSnap = await _db.collection('payments')
+        .where('tierType', isEqualTo: tierType == TierType.client ? 'client' : 'supplier')
+        .get();
 
-    if (specificTierId != null) {
-      transactions = transactions.where((t) => t.tierId == specificTierId).toList();
+    List<AppTransaction> allTxs = allTxsSnap.docs.map((d) => AppTransaction.fromMap(d.data(), d.id)).toList();
+    List<Payment> allPays = allPaysSnap.docs.map((d) => Payment.fromMap(d.data(), d.id)).toList();
+
+    // Trier les transactions par date pour l'imputation FIFO
+    allTxs.sort((a, b) => a.date.compareTo(b.date));
+
+    // 2. Calculer par Tiers
+    Map<String, double> creditsByTier = {};
+    for (var p in allPays) {
+      creditsByTier[p.tierId] = (creditsByTier[p.tierId] ?? 0) + p.amount;
+    }
+    
+    // Ajouter les acomptes des transactions qui ne sont pas dans 'payments'
+    for (var t in allTxs) {
+      if (t.amountPaid > 0) {
+        bool dejaCompte = allPays.any((p) => p.invoiceNumber == t.invoiceNumber || p.reference.contains(t.invoiceNumber));
+        if (!dejaCompte) {
+          creditsByTier[t.tierId] = (creditsByTier[t.tierId] ?? 0) + t.amountPaid;
+        }
+      }
     }
 
-    // 2. Récupérer TOUS les paiements pour ces transactions ou ces tiers
-    final paySnap = await _db.collection('payments').get();
-    List<Payment> allPayments = paySnap.docs.map((doc) => Payment.fromMap(doc.data(), doc.id)).toList();
-
+    // 3. Imputer les crédits et filtrer par la période demandée
     List<Map<String, dynamic>> results = [];
+    Map<String, double> remainingCredits = Map.from(creditsByTier);
 
-    for (var t in transactions) {
-      // Les règlements ultérieurs (qui ne sont pas l'acompte initial déjà dans t.amountPaid)
-      // OU on prend tous les paiements liés à la facture dans la collection payments
-      // La méthode la plus sûre : Net à Payer - Somme de TOUS les paiements liés au invoiceNumber
+    for (var t in allTxs) {
+      double creditTier = remainingCredits[t.tierId] ?? 0;
+      double amountApplied = creditTier >= t.netToPay ? t.netToPay : creditTier;
+      double reste = t.netToPay - amountApplied;
       
-      double totalPaidOnInvoice = allPayments
-          .where((p) => p.invoiceNumber == t.invoiceNumber)
-          .fold(0.0, (sum, p) => sum + p.amount);
-      
-      // Si par hasard des paiements n'ont pas de invoiceNumber mais sont de l'acompte (ancien système)
-      // on s'assure de ne pas descendre en dessous de t.amountPaid
-      if (totalPaidOnInvoice < t.amountPaid) {
-        totalPaidOnInvoice = t.amountPaid;
-      }
-      
-      double remaining = t.netToPay - totalPaidOnInvoice;
+      remainingCredits[t.tierId] = creditTier - amountApplied;
 
-      // On affiche seulement si il reste plus de 10 FCFA (pour éviter les résidus de virgules)
-      if (remaining > 10) {
+      // On n'ajoute au rapport que si c'est dans la période ET qu'il reste un solde
+      if (reste > 10 && t.date.isAfter(start.subtract(const Duration(days: 1))) && t.date.isBefore(end.add(const Duration(days: 1)))) {
         results.add({
           'transaction': t,
-          'totalPaid': totalPaidOnInvoice,
-          'remaining': remaining,
+          'totalPaid': amountApplied,
+          'remaining': reste,
         });
       }
     }
-
     return results;
   }
 }

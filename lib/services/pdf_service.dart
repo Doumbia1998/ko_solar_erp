@@ -425,7 +425,7 @@ class PdfService {
               return [
                 DateFormat('dd/MM/yy').format(t.date),
                 t.invoiceNumber,
-                t.tierName,
+                t.tierName.toUpperCase(),
                 _currencyFormat.format(t.netToPay),
                 _currencyFormat.format(d['totalPaid']),
                 _currencyFormat.format(d['remaining']),

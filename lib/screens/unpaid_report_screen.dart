@@ -43,14 +43,19 @@ class _UnpaidReportScreenState extends State<UnpaidReportScreen> {
     try {
       final firestoreService = Provider.of<FirestoreService>(context, listen: false);
       
-      final details = await firestoreService.getUnpaidTransactionsWithDetails(
-        type: _reportType == 'client' ? TransactionType.sale : TransactionType.purchase,
+      final details = await firestoreService.getUnpaidReport(
+        tierType: _reportType == 'client' ? TierType.client : TierType.supplier,
         start: _startDate,
         end: _endDate,
-        specificTierId: _selectedTier?.id,
       );
 
-      if (details.isEmpty) {
+      // Si un tiers spécifique est sélectionné, on filtre la liste
+      List<Map<String, dynamic>> finalDetails = details;
+      if (_selectedTier != null) {
+        finalDetails = details.where((d) => (d['transaction'] as AppTransaction).tierId == _selectedTier!.id).toList();
+      }
+
+      if (finalDetails.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Aucun impayé trouvé pour ces critères.')),
