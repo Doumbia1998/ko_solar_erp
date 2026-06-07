@@ -1,4 +1,4 @@
-# ssf_erp
+# ko_solar_erp
 
 A new Flutter project.
 

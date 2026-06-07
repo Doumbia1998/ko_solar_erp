@@ -64,7 +64,7 @@ class ReportService {
                 pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    pw.Text('SSF', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
+                    pw.Text('KO SOLAR', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
                     pw.Text('TRANSPORT & LOGISTIQUE', style: const pw.TextStyle(fontSize: 10)),
                   ],
                 ),
@@ -88,7 +88,7 @@ class ReportService {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Text('© SSF - Gestion Commerciale', style: const pw.TextStyle(fontSize: 8)),
+                pw.Text('© KO SOLAR - Gestion Commerciale', style: const pw.TextStyle(fontSize: 8)),
                 pw.Text('Date de tirage : ${DateFormat('dd/MM/yy').format(DateTime.now())} à ${DateFormat('HH:mm:ss').format(DateTime.now())}',
                     style: const pw.TextStyle(fontSize: 8)),
                 pw.Text('Page : 1', style: const pw.TextStyle(fontSize: 8)),

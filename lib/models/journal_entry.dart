@@ -10,6 +10,8 @@ class JournalEntry {
   final double credit;
   final String reference;
   final String journalCode; // ACH, VEN, BQ, CAI
+  final String? tierId;
+  final String? tierName;
 
   JournalEntry({
     required this.id,
@@ -21,6 +23,8 @@ class JournalEntry {
     required this.credit,
     required this.reference,
     required this.journalCode,
+    this.tierId,
+    this.tierName,
   });
 
   Map<String, dynamic> toMap() {
@@ -33,6 +37,8 @@ class JournalEntry {
       'credit': credit,
       'reference': reference,
       'journalCode': journalCode,
+      'tierId': tierId,
+      'tierName': tierName,
     };
   }
 
@@ -47,6 +53,8 @@ class JournalEntry {
       credit: (map['credit'] as num).toDouble(),
       reference: map['reference'] ?? '',
       journalCode: map['journalCode'] ?? '',
+      tierId: map['tierId'],
+      tierName: map['tierName'],
     );
   }
 }

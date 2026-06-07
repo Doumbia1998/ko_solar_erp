@@ -73,6 +73,7 @@ class AuthService {
     bool canDeleteTiers = false,
     bool canViewTransport = false,
     bool canEditTransport = false,
+    String? warehouseId,
   }) async {
     // 1. Créer une instance secondaire pour ne pas déconnecter l'admin
     FirebaseApp secondaryApp = await Firebase.initializeApp(
@@ -92,6 +93,7 @@ class AuthService {
           email: email,
           displayName: displayName,
           role: role,
+          warehouseId: warehouseId,
           canViewPurchases: canViewPurchases,
           canViewSales: canViewSales,
           canDeleteSales: canDeleteSales,

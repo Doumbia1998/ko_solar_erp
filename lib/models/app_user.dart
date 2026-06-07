@@ -1,10 +1,11 @@
-enum UserRole { admin, manager, employee }
+enum UserRole { admin, manager, employee, storekeeper }
 
 class AppUser {
   final String uid;
   final String email;
   final String displayName;
   final UserRole role;
+  final String? warehouseId; // Dépôt assigné pour le magasinier
 
   // Permissions Granulaires
   final bool canViewPurchases;
@@ -28,6 +29,7 @@ class AppUser {
     required this.email,
     required this.displayName,
     required this.role,
+    this.warehouseId,
     this.canViewPurchases = false,
     this.canViewSales = true,
     this.canDeleteSales = false,
@@ -49,6 +51,7 @@ class AppUser {
       'email': email,
       'displayName': displayName,
       'role': role.toString().split('.').last,
+      'warehouseId': warehouseId,
       'canViewPurchases': canViewPurchases,
       'canViewSales': canViewSales,
       'canDeleteSales': canDeleteSales,
@@ -74,6 +77,7 @@ class AppUser {
         (e) => e.toString().split('.').last == map['role'],
         orElse: () => UserRole.employee,
       ),
+      warehouseId: map['warehouseId'],
       canViewPurchases: map['canViewPurchases'] ?? false,
       canViewSales: map['canViewSales'] ?? true,
       canDeleteSales: map['canDeleteSales'] ?? false,

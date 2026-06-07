@@ -23,10 +23,7 @@ class DefaultFirebaseOptions {
       case TargetPlatform.android:
         return android;
       case TargetPlatform.iOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for ios - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return ios;
       case TargetPlatform.macOS:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for macos - '
@@ -50,19 +47,29 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyD06jmz9kpCbBaxlsIx1TXRAm0hrVZ2850',
-    appId: '1:191924732396:web:9a2e21c9438c11ac8d80c9',
-    messagingSenderId: '191924732396',
-    projectId: 'ssf-erp',
-    authDomain: 'ssf-erp.firebaseapp.com',
-    storageBucket: 'ssf-erp.firebasestorage.app',
+    apiKey: 'AIzaSyCnwgpIhk59IRPiJij6yoFwK34UbP-LgVY',
+    appId: '1:40200608427:web:d7040a9c9f26b4fad935ee',
+    messagingSenderId: '40200608427',
+    projectId: 'k-o-solar-erp',
+    authDomain: 'k-o-solar-erp.firebaseapp.com',
+    storageBucket: 'k-o-solar-erp.firebasestorage.app',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyASDDb1_WSi9quHJDJsA0rd2uFDpGUkxtg',
-    appId: '1:191924732396:android:2ad0df7556e27de38d80c9',
-    messagingSenderId: '191924732396',
-    projectId: 'ssf-erp',
-    storageBucket: 'ssf-erp.firebasestorage.app',
+    apiKey: 'AIzaSyDFlPpOzi-q9L94H4iGXmTY7333NxUN5gI',
+    appId: '1:40200608427:android:860885ea20793aa4d935ee',
+    messagingSenderId: '40200608427',
+    projectId: 'k-o-solar-erp',
+    storageBucket: 'k-o-solar-erp.firebasestorage.app',
   );
+
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIzaSyCsriUiWQdaMTm0ufXldeVoHOgB-uMl2gk',
+    appId: '1:40200608427:ios:0d0442eb5fedc81ed935ee',
+    messagingSenderId: '40200608427',
+    projectId: 'k-o-solar-erp',
+    storageBucket: 'k-o-solar-erp.firebasestorage.app',
+    iosBundleId: 'com.kosolar.koSolarErp',
+  );
+
 }

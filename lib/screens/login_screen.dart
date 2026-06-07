@@ -66,14 +66,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       'assets/images/logo.png',
                       fit: BoxFit.contain,
                       errorBuilder: (context, error, stackTrace) => const Center(
-                        child: Text('SSF', style: TextStyle(color: Color(0xFF1A237E), fontSize: 30, fontWeight: FontWeight.bold)),
+                        child: Text('KO SOLAR', style: TextStyle(color: Color(0xFF1A237E), fontSize: 30, fontWeight: FontWeight.bold)),
                       ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 15),
                 const Text(
-                  'SSF ERP VENTE',
+                  'KO SOLAR ERP',
                   style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 1.2),
                 ),
                 const SizedBox(height: 30),

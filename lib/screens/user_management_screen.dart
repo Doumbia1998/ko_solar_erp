@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../models/app_user.dart';
+import '../models/warehouse.dart';
+import '../services/firestore_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class UserManagementScreen extends StatefulWidget {
@@ -16,6 +18,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
   UserRole _selectedRole = UserRole.employee;
+  String? _selectedWarehouseId;
 
   // États des permissions
   bool _canViewPurchases = false;
@@ -93,6 +96,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     switch (role.toLowerCase()) {
       case 'admin': return Colors.red;
       case 'manager': return Colors.orange;
+      case 'storekeeper': return Colors.green;
       default: return Colors.blueGrey;
     }
   }
@@ -131,6 +135,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     _nameController.text = user.displayName;
     _emailController.text = user.email;
     _selectedRole = user.role;
+    _selectedWarehouseId = user.warehouseId;
     _canViewPurchases = user.canViewPurchases;
     _canViewSales = user.canViewSales;
     _canDeleteSales = user.canDeleteSales;
@@ -145,6 +150,8 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     _canViewTransport = user.canViewTransport;
     _canEditTransport = user.canEditTransport;
 
+    final service = context.read<FirestoreService>();
+
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -156,6 +163,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
               children: [
                 TextField(controller: _nameController, decoration: const InputDecoration(labelText: 'Nom complet')),
                 const SizedBox(height: 20),
+                const Text('Rôle :', style: TextStyle(fontSize: 12, color: Colors.grey)),
                 DropdownButton<UserRole>(
                   isExpanded: true,
                   value: _selectedRole,
@@ -164,7 +172,24 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                   }).toList(),
                   onChanged: (val) => setDialogState(() => _selectedRole = val!),
                 ),
+                if (_selectedRole == UserRole.storekeeper) ...[
+                  const SizedBox(height: 10),
+                  StreamBuilder<List<Warehouse>>(
+                    stream: service.getWarehouses(),
+                    builder: (context, snapshot) {
+                      final warehouses = snapshot.data ?? [];
+                      return DropdownButtonFormField<String>(
+                        value: _selectedWarehouseId,
+                        decoration: const InputDecoration(labelText: 'Assigner un dépôt', border: OutlineInputBorder()),
+                        items: warehouses.map((w) => DropdownMenuItem(value: w.id, child: Text(w.name))).toList(),
+                        onChanged: (val) => setDialogState(() => _selectedWarehouseId = val),
+                        validator: (val) => _selectedRole == UserRole.storekeeper && val == null ? 'Dépôt requis' : null,
+                      );
+                    },
+                  ),
+                ],
                 const Divider(),
+                const Text('Permissions détaillées', style: TextStyle(fontWeight: FontWeight.bold)),
                 _buildPermissionSwitch(setDialogState, 'Voir Achats', _canViewPurchases, (v) => _canViewPurchases = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Ventes', _canViewSales, (v) => _canViewSales = v),
                 _buildPermissionSwitch(setDialogState, 'Supprimer Ventes', _canDeleteSales, (v) => _canDeleteSales = v),
@@ -191,6 +216,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                   email: user.email,
                   displayName: _nameController.text.trim(),
                   role: _selectedRole,
+                  warehouseId: _selectedRole == UserRole.storekeeper ? _selectedWarehouseId : null,
                   canViewPurchases: _canViewPurchases,
                   canViewSales: _canViewSales,
                   canDeleteSales: _canDeleteSales,
@@ -222,9 +248,13 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     _emailController.clear();
     _passwordController.clear();
     _selectedRole = UserRole.employee;
+    _selectedWarehouseId = null;
     // Reset permissions to default employee
     _canViewSales = _canViewProducts = _canViewTiers = true;
     _canViewPurchases = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canEditTiers = _canDeleteTiers = _canViewTransport = _canEditTransport = false;
+    
+    final service = context.read<FirestoreService>();
+
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -254,6 +284,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                       // Pré-configuration par défaut selon le rôle
                       if (_selectedRole == UserRole.admin) {
                         _canViewPurchases = _canViewSales = _canDeleteSales = _canViewProducts = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = true;
+                      } else if (_selectedRole == UserRole.storekeeper) {
+                        _canViewProducts = true;
+                        _canViewPurchases = _canViewSales = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = false;
                       } else if (_selectedRole == UserRole.manager) {
                         _canViewPurchases = _canViewSales = _canViewProducts = _canEditProducts = _canViewTiers = _canEditTiers = true;
                         _canDeleteSales = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canDeleteTiers = _canViewTransport = _canEditTransport = false;
@@ -264,6 +297,22 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                     });
                   },
                 ),
+                if (_selectedRole == UserRole.storekeeper) ...[
+                  const SizedBox(height: 10),
+                  StreamBuilder<List<Warehouse>>(
+                    stream: service.getWarehouses(),
+                    builder: (context, snapshot) {
+                      final warehouses = snapshot.data ?? [];
+                      return DropdownButtonFormField<String>(
+                        value: _selectedWarehouseId,
+                        decoration: const InputDecoration(labelText: 'Assigner un dépôt', border: OutlineInputBorder()),
+                        items: warehouses.map((w) => DropdownMenuItem(value: w.id, child: Text(w.name))).toList(),
+                        onChanged: (val) => setDialogState(() => _selectedWarehouseId = val),
+                        validator: (val) => _selectedRole == UserRole.storekeeper && val == null ? 'Dépôt requis' : null,
+                      );
+                    },
+                  ),
+                ],
                 const Divider(),
                 const Text('Permissions détaillées', style: TextStyle(fontWeight: FontWeight.bold)),
                 _buildPermissionSwitch(setDialogState, 'Voir Achats', _canViewPurchases, (v) => _canViewPurchases = v),
@@ -297,6 +346,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                     password: _passwordController.text.trim(),
                     displayName: _nameController.text.trim(),
                     role: _selectedRole,
+                    warehouseId: _selectedRole == UserRole.storekeeper ? _selectedWarehouseId : null,
                     // Passer les permissions
                     canViewPurchases: _canViewPurchases,
                     canViewSales: _canViewSales,

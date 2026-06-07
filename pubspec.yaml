@@ -1,5 +1,5 @@
-name: ssf_erp
-description: "Projet ERP SSF - Flutter, Dart et Firebase"
+name: ko_solar_erp
+description: "Projet ERP KO SOLAR - Flutter, Dart et Firebase"
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -25,6 +25,7 @@ dependencies:
   uuid: ^4.5.1
   image_picker: ^1.1.2
   shared_preferences: ^2.5.2
+  url_launcher: ^6.2.5
 
 dev_dependencies:
   flutter_test:

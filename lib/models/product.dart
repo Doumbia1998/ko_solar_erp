@@ -6,7 +6,8 @@ class Product {
   final double sellingPrice;
   final int totalQuantity;
   final String category;
-  final String compteComptable;
+  final String compteAchat; // Compte 601...
+  final String compteVente; // Compte 701...
 
   Product({
     required this.id,
@@ -16,7 +17,8 @@ class Product {
     required this.sellingPrice,
     required this.totalQuantity,
     required this.category,
-    required this.compteComptable,
+    this.compteAchat = '601100',
+    this.compteVente = '701100',
   });
 
   Map<String, dynamic> toMap() {
@@ -27,7 +29,8 @@ class Product {
       'sellingPrice': sellingPrice,
       'totalQuantity': totalQuantity,
       'category': category,
-      'compteComptable': compteComptable,
+      'compteAchat': compteAchat,
+      'compteVente': compteVente,
     };
   }
 
@@ -40,7 +43,8 @@ class Product {
       sellingPrice: (map['sellingPrice'] ?? 0).toDouble(),
       totalQuantity: map['totalQuantity'] ?? 0,
       category: map['category'] ?? '',
-      compteComptable: map['compteComptable'] ?? '',
+      compteAchat: map['compteAchat'] ?? map['compteComptable'] ?? '601100',
+      compteVente: map['compteVente'] ?? '701100',
     );
   }
 

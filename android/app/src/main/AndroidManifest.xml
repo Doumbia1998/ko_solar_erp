@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="ssf_erp"
+        android:label="KO SOLAR ERP"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

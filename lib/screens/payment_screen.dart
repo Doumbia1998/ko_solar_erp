@@ -320,40 +320,63 @@ class _PaymentScreenState extends State<PaymentScreen> with SingleTickerProvider
   }
 
   void _transferPaymentToAccounting(BuildContext context, FirestoreService service, Payment p) async {
-    // Déterminer le journal (BQ pour Banque, CAI pour Espèces/Mobile)
-    String journalCode = (p.method.toLowerCase().contains('banque') || p.method.toLowerCase().contains('virement')) ? 'BQ' : 'CAI';
-    
-    // Déterminer le compte de contrepartie (411 pour Client, 401 pour Fournisseur)
-    String tiersAccount = p.tierType == TierType.client ? '411' : '401';
-    
-    // Déterminer le compte de trésorerie (521 pour Banque, 571 pour Caisse)
-    String tresoAccount = journalCode == 'BQ' ? '521' : '571';
-    String tresoLabel = journalCode == 'BQ' ? 'Banque' : 'Caisse';
+    // --- LOGIQUE DE MAPPING JOURNAL / COMPTE ---
+    String journalCode = 'BQ';
+    String cashAccount = '521100';
+    String cashLabel = 'Banque';
+    String m = p.method.toLowerCase();
 
-    // Créer la ligne de trésorerie (521 ou 571)
+    if (m.contains('sanogo')) {
+      journalCode = 'CAS';
+      cashAccount = '571200';
+      cashLabel = 'Caisse Sanogo';
+    } else if (m.contains('principal')) {
+      journalCode = 'CAP';
+      cashAccount = '571100';
+      cashLabel = 'Caisse Principal';
+    } else if (m.contains('dépendes') || m.contains('dépenses') || m.contains('depense')) {
+      journalCode = 'CAD';
+      cashAccount = '571300';
+      cashLabel = 'Caisse Dépenses';
+    } else if (m.contains('espèce') || m.contains('espece') || m.contains('cash')) {
+      journalCode = 'CAP';
+      cashAccount = '571100';
+      cashLabel = 'Caisse Principal';
+    } else if (m.contains('bim') || m.contains('banque') || m.contains('chèque') || m.contains('virement')) {
+      journalCode = 'BQ';
+      cashAccount = '521100';
+      cashLabel = 'Banque BIM SA';
+    }
+
+    final String tierAccount = p.tierType == TierType.client ? '411100' : '401100';
+    final String tierLabel = p.tierType == TierType.client ? 'Clients' : 'Fournisseurs';
+
+    // Créer la ligne de trésorerie
     final tresoEntry = JournalEntry(
       id: '',
       date: p.date,
       label: 'Règlement ${p.tierName} (${p.method})',
-      accountCode: tresoAccount,
-      accountLabel: tresoLabel,
+      accountCode: cashAccount,
+      accountLabel: cashLabel,
       debit: p.tierType == TierType.client ? p.amount : 0,
       credit: p.tierType == TierType.supplier ? p.amount : 0,
-      reference: p.id,
+      reference: p.reference.isEmpty ? 'PAY-${p.id.substring(0,5)}' : p.reference,
       journalCode: journalCode,
     );
 
-    // Créer la ligne de contrepartie (411 ou 401)
+    // Créer la ligne de contrepartie
     final tiersEntry = JournalEntry(
       id: '',
       date: p.date,
       label: 'Contrepartie règlement ${p.tierName}',
-      accountCode: tiersAccount,
-      accountLabel: p.tierType == TierType.client ? 'Clients' : 'Fournisseurs',
+      accountCode: tierAccount,
+      accountLabel: tierLabel,
       debit: p.tierType == TierType.supplier ? p.amount : 0,
       credit: p.tierType == TierType.client ? p.amount : 0,
-      reference: p.id,
+      reference: p.reference.isEmpty ? 'PAY-${p.id.substring(0,5)}' : p.reference,
       journalCode: journalCode,
+      tierId: p.tierId,
+      tierName: p.tierName,
     );
 
     await service.addJournalEntry(tresoEntry);
@@ -363,7 +386,7 @@ class _PaymentScreenState extends State<PaymentScreen> with SingleTickerProvider
     await service.updatePaymentStatus(p.id, true);
     
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Règlement comptabilisé (Débit/Crédit)')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Règlement comptabilisé dans le bon journal !')));
     }
   }
 

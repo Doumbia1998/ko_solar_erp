@@ -63,13 +63,13 @@ class PdfService {
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text('SSF', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                  pw.Text('KO SOLAR', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
                   pw.Container(
                     padding: const pw.EdgeInsets.all(10),
                     decoration: pw.BoxDecoration(border: pw.Border.all()),
                     child: pw.Column(
                       children: [
-                        pw.Text('SOCIETE SANOGO & FRERE', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        pw.Text('KO SOLAR ERP', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
                         pw.Text('Commerçant Import - Export - Transport'),
                         pw.Text('Tel: 67 63 64 47 / 70 12 68 14'),
                       ],
@@ -259,8 +259,8 @@ class PdfService {
               pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Text('SSF - HISTORIQUE DES TRANSFERTS', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 18, color: PdfColors.blue900)),
-                  pw.Text('SOCIETE SANOGO & FRERE', style: const pw.TextStyle(fontSize: 10)),
+                  pw.Text('KO SOLAR - HISTORIQUE DES TRANSFERTS', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 18, color: PdfColors.blue900)),
+                  pw.Text('KO SOLAR ERP', style: const pw.TextStyle(fontSize: 10)),
                 ],
               ),
               pw.Text(DateFormat('dd/MM/yyyy').format(DateTime.now())),
@@ -308,13 +308,13 @@ class PdfService {
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text('SSF', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                  pw.Text('KO SOLAR', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
                   pw.Container(
                     padding: const pw.EdgeInsets.all(10),
                     decoration: pw.BoxDecoration(border: pw.Border.all()),
                     child: pw.Column(
                       children: [
-                        pw.Text('SOCIETE SANOGO & FRERE', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        pw.Text('KO SOLAR ERP', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
                         pw.Text('Bon de Livraison - Détail Dépôt'),
                       ],
                     ),
@@ -407,7 +407,7 @@ class PdfService {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Text('SSF - ÉTAT DÉTAILLÉ DES IMPAYÉS ${type.toUpperCase()}S', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16, color: PdfColors.red900)),
+                pw.Text('KO SOLAR - ÉTAT DÉTAILLÉ DES IMPAYÉS ${type.toUpperCase()}S', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16, color: PdfColors.red900)),
                 pw.Text('Du ${DateFormat('dd/MM/yy').format(start)} au ${DateFormat('dd/MM/yy').format(end)}'),
               ],
             ),
@@ -536,7 +536,7 @@ class PdfService {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Text('SSF - RAPPORT DE RÈGLEMENTS', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16, color: PdfColors.blue900)),
+                pw.Text('KO SOLAR - RAPPORT DE RÈGLEMENTS', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16, color: PdfColors.blue900)),
                 pw.Text(period, style: const pw.TextStyle(fontSize: 10)),
               ],
             ),
@@ -639,7 +639,7 @@ class PdfService {
                       children: [
                         pw.Text('Signature & Cachet'),
                         pw.SizedBox(height: 40),
-                        pw.Text('SOCIETE SANOGO & FRERE', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                        pw.Text('KO SOLAR ERP', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
                       ],
                     ),
                   ],
@@ -666,7 +666,7 @@ class PdfService {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Text('SSF - RAPPORT D\'INVENTAIRE VALORISÉ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16, color: PdfColors.blue900)),
+                pw.Text('KO SOLAR - RAPPORT D\'INVENTAIRE VALORISÉ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16, color: PdfColors.blue900)),
                 pw.Text(DateFormat('dd/MM/yyyy').format(DateTime.now())),
               ],
             ),
@@ -711,7 +711,7 @@ class PdfService {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Text('SSF - MOUVEMENTS DE STOCK', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16, color: PdfColors.orange900)),
+                pw.Text('KO SOLAR - MOUVEMENTS DE STOCK', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16, color: PdfColors.orange900)),
                 pw.Text('Du ${DateFormat('dd/MM/yy').format(start)} au ${DateFormat('dd/MM/yy').format(end)}'),
               ],
             ),
@@ -761,7 +761,7 @@ class PdfService {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Text('SSF - RÉCAPITULATIF DES ${type.toUpperCase()}S', 
+                pw.Text('KO SOLAR - RÉCAPITULATIF DES ${type.toUpperCase()}S', 
                   style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16, color: type == 'Vente' ? PdfColors.blue900 : PdfColors.teal900)),
                 pw.Text('Du ${DateFormat('dd/MM/yy').format(start)} au ${DateFormat('dd/MM/yy').format(end)}'),
               ],
@@ -823,7 +823,7 @@ class PdfService {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Text('SSF - ANALYSE DE RENTABILITÉ DÉTAILLÉE', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                pw.Text('KO SOLAR - ANALYSE DE RENTABILITÉ DÉTAILLÉE', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
                 pw.Text('Du ${DateFormat('dd/MM/yy').format(start)} au ${DateFormat('dd/MM/yy').format(end)}'),
               ],
             ),

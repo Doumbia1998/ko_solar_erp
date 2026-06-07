@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum TransactionType { purchase, sale }
+enum TransactionType { purchase, sale, quote }
 
 class TransactionItem {
   final String productId;
@@ -55,6 +55,7 @@ class AppTransaction {
   final double transportFees;
   final bool addTransport; // true = ajouter, false = soustraire
   final bool isPosted; // Nouveau : statut comptabilisation
+  final String deliveryStatus; // 'pending', 'delivered'
   final String createdBy; // Nom de l'utilisateur
 
   AppTransaction({
@@ -73,6 +74,7 @@ class AppTransaction {
     this.transportFees = 0.0,
     this.addTransport = true,
     this.isPosted = false,
+    this.deliveryStatus = 'pending',
     this.createdBy = '',
   });
 
@@ -96,6 +98,7 @@ class AppTransaction {
       'transportFees': transportFees,
       'addTransport': addTransport,
       'isPosted': isPosted,
+      'deliveryStatus': deliveryStatus,
       'createdBy': createdBy,
     };
   }
@@ -117,6 +120,7 @@ class AppTransaction {
       transportFees: (map['transportFees'] ?? 0).toDouble(),
       addTransport: map['addTransport'] ?? true,
       isPosted: map['isPosted'] ?? false,
+      deliveryStatus: map['deliveryStatus'] ?? 'pending',
       createdBy: map['createdBy'] ?? '',
     );
   }

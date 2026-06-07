@@ -7,7 +7,10 @@ import '../models/app_user.dart';
 import '../services/auth_service.dart';
 import 'transaction_form_screen.dart';
 import '../services/pdf_service.dart';
+import '../services/whatsapp_service.dart';
 import '../models/journal_entry.dart';
+import '../models/payment.dart';
+import '../models/tier.dart';
 
 class TransactionListScreen extends StatefulWidget {
   final TransactionType type;
@@ -53,8 +56,16 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
   Widget build(BuildContext context) {
     final firestoreService = Provider.of<FirestoreService>(context);
     final isSale = widget.type == TransactionType.sale;
-    final color = isSale ? const Color(0xFF1A237E) : const Color(0xFF00796B);
-    final title = isSale ? 'Ventes' : 'Achats';
+    final isQuote = widget.type == TransactionType.quote;
+    
+    Color color = const Color(0xFF1A237E);
+    if (!isSale && !isQuote) color = const Color(0xFF00796B); // Achats
+    if (isQuote) color = Colors.purple;
+
+    String title = 'Achats';
+    if (isSale) title = 'Ventes';
+    if (isQuote) title = 'Devis';
+
     final isAdminOrManager = _currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.manager;
 
     return Scaffold(
@@ -87,7 +98,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                 child: TextField(
                   onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
                   decoration: InputDecoration(
-                    hintText: 'Rechercher par client ou facture...',
+                    hintText: 'Rechercher...',
                     prefixIcon: const Icon(Icons.search),
                     border: UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey.shade300)),
                   ),
@@ -124,7 +135,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                isSale ? 'TOTAL CA VENTES' : 'TOTAL ACHATS',
+                                isQuote ? 'TOTAL DEVIS' : (isSale ? 'TOTAL CA VENTES' : 'TOTAL ACHATS'),
                                 style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 13),
                               ),
                               FittedBox(
@@ -142,9 +153,9 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                           icon: const Icon(Icons.picture_as_pdf, color: Colors.white, size: 30),
                           onPressed: () {
                             PdfService.generateGlobalTransactionReport(
-                              type: isSale ? 'Vente' : 'Achat',
-                              start: DateTime.now().subtract(const Duration(days: 30)), // Par défaut 30 jours
-                              end: DateTime.now(),
+                              type: title,
+                              start: _selectedDateRange!.start,
+                              end: _selectedDateRange!.end,
                               transactions: transactions,
                             );
                           },
@@ -157,42 +168,55 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
               Expanded(
                 child: StreamBuilder<List<AppTransaction>>(
                   stream: firestoreService.getTransactions(type: widget.type),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-                    
-                    var transactions = snapshot.data ?? [];
+                  builder: (context, snapshotTrans) {
+                    return StreamBuilder<List<Payment>>(
+                      stream: firestoreService.getPayments(),
+                      builder: (context, snapshotPays) {
+                        if (snapshotTrans.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+                        
+                        var transactions = snapshotTrans.data ?? [];
+                        final payments = snapshotPays.data ?? [];
 
-                    // Filtrage par date
-                    transactions = transactions.where((t) => 
-                      t.date.isAfter(_selectedDateRange!.start.subtract(const Duration(days: 1))) &&
-                      t.date.isBefore(_selectedDateRange!.end.add(const Duration(days: 1)))
-                    ).toList();
+                        // Filtrage par date
+                        transactions = transactions.where((t) => 
+                          t.date.isAfter(_selectedDateRange!.start.subtract(const Duration(days: 1))) &&
+                          t.date.isBefore(_selectedDateRange!.end.add(const Duration(days: 1)))
+                        ).toList();
 
-                    if (_searchQuery.isNotEmpty) {
-                      transactions = transactions.where((t) => 
-                        t.tierName.toLowerCase().contains(_searchQuery) || 
-                        t.invoiceNumber.toLowerCase().contains(_searchQuery)
-                      ).toList();
-                    }
+                        if (_searchQuery.isNotEmpty) {
+                          transactions = transactions.where((t) => 
+                            t.tierName.toLowerCase().contains(_searchQuery) || 
+                            t.invoiceNumber.toLowerCase().contains(_searchQuery)
+                          ).toList();
+                        }
 
-                    if (transactions.isEmpty) return const Center(child: Text('Aucun historique disponible'));
+                        if (transactions.isEmpty) return const Center(child: Text('Aucun historique disponible'));
 
-                    return ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: transactions.length,
-                      itemBuilder: (context, index) {
-                        final t = transactions[index];
-                        final isMobile = MediaQuery.of(context).size.width < 600;
+                        return ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          itemCount: transactions.length,
+                          itemBuilder: (context, index) {
+                            final t = transactions[index];
+                            
+                            double realTotalPaid = payments
+                                .where((p) => p.invoiceNumber == t.invoiceNumber)
+                                .fold(0.0, (sum, p) => sum + p.amount);
+                            
+                            if (realTotalPaid == 0) realTotalPaid = t.amountPaid;
 
-                        return Card(
-                          elevation: 2,
-                          margin: const EdgeInsets.only(bottom: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          child: isMobile 
-                            ? _buildMobileItem(t, color, isSale, isAdminOrManager, firestoreService)
-                            : _buildDesktopItem(t, color, isSale, isAdminOrManager, firestoreService),
+                            final isMobile = MediaQuery.of(context).size.width < 600;
+
+                            return Card(
+                              elevation: 2,
+                              margin: const EdgeInsets.only(bottom: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              child: isMobile 
+                                ? _buildMobileItem(t, color, isSale, isAdminOrManager, firestoreService, realTotalPaid)
+                                : _buildDesktopItem(t, color, isSale, isAdminOrManager, firestoreService, realTotalPaid),
+                            );
+                          },
                         );
-                      },
+                      }
                     );
                   },
                 ),
@@ -204,22 +228,72 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => TransactionFormScreen(type: widget.type))),
         backgroundColor: color,
-        label: Text('Nouvel ${isSale ? "Vente" : "Achat"}', style: const TextStyle(color: Colors.white)),
+        label: Text('Nouveau $title', style: const TextStyle(color: Colors.white)),
         icon: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
 
-  Widget _buildDesktopItem(AppTransaction t, Color color, bool isSale, bool isAdminOrManager, FirestoreService firestoreService) {
+  Widget _buildPaymentStatusChip(AppTransaction t, double paidAmount) {
+    if (t.type == TransactionType.quote) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.purple.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.purple, width: 1),
+        ),
+        child: const Text("BROUILLON", style: TextStyle(color: Colors.purple, fontSize: 9, fontWeight: FontWeight.bold)),
+      );
+    }
+    
+    String text;
+    Color color;
+    double net = t.netToPay;
+    
+    if (paidAmount <= 0) {
+      text = "Impayée";
+      color = Colors.red;
+    } else if (paidAmount >= (net - 5)) { 
+      text = "Payée";
+      color = Colors.green;
+    } else {
+      text = "Commencée";
+      color = Colors.orange;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color, width: 1),
+      ),
+      child: Text(
+        text.toUpperCase(),
+        style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _buildDesktopItem(AppTransaction t, Color color, bool isSale, bool isAdminOrManager, FirestoreService firestoreService, double paidAmount) {
+    final isQuote = t.type == TransactionType.quote;
     final isSmallDesktop = MediaQuery.of(context).size.width < 900;
+    
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
-        child: Icon(isSale ? Icons.shopping_bag : Icons.shopping_cart, color: color),
+        child: Icon(isQuote ? Icons.request_quote : (isSale ? Icons.shopping_bag : Icons.shopping_cart), color: color),
       ),
-      title: Text('${isSale ? "Vente" : "Achat"} ${t.invoiceNumber}', style: const TextStyle(fontWeight: FontWeight.bold)),
+      title: Row(
+        children: [
+          Text('${isQuote ? "Devis" : (isSale ? "Vente" : "Achat")} ${t.invoiceNumber}', style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(width: 10),
+          _buildPaymentStatusChip(t, paidAmount),
+        ],
+      ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -235,32 +309,40 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
         ],
       ),
       trailing: SizedBox(
-        width: isSmallDesktop ? 160 : 220, // Ajusté pour éviter l'overflow sur desktop étroit
+        width: isSmallDesktop ? 220 : 300, 
         child: Wrap(
           spacing: 0,
           alignment: WrapAlignment.end,
           children: [
             Text(
-              '${_formatAmount(t.totalHT)} F',
+              '${_formatAmount(t.netToPay)} F',
               style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 14),
             ),
-            if (isAdminOrManager)
+            if (isQuote)
               IconButton(
                 visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.edit, color: Colors.blue, size: 20), 
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => TransactionFormScreen(type: widget.type, transaction: t))),
+                icon: const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                tooltip: 'Convertir en Vente',
+                onPressed: () => _showConvertDialog(context, firestoreService, t),
               ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.share, color: Colors.teal, size: 20),
+              tooltip: 'Partager sur WhatsApp',
+              onPressed: () => _sendWhatsApp(context, firestoreService, t),
+            ),
             IconButton(
               visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 20), 
               onPressed: () => PdfService.generateInvoice(t)
             ),
+            if (!isQuote)
             IconButton(
               visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.local_shipping, color: Colors.blueGrey, size: 20), 
               onPressed: () => PdfService.generateDeliveryNote(t)
             ),
-            if (isAdminOrManager)
+            if (isAdminOrManager && !isQuote)
               IconButton(
                 visualDensity: VisualDensity.compact,
                 icon: Icon(Icons.account_balance, color: t.isPosted ? Colors.grey : Colors.teal, size: 20),
@@ -278,7 +360,8 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     );
   }
 
-  Widget _buildMobileItem(AppTransaction t, Color color, bool isSale, bool isAdminOrManager, FirestoreService firestoreService) {
+  Widget _buildMobileItem(AppTransaction t, Color color, bool isSale, bool isAdminOrManager, FirestoreService firestoreService, double paidAmount) {
+    final isQuote = t.type == TransactionType.quote;
     return Padding(
       padding: const EdgeInsets.all(8),
       child: Column(
@@ -286,62 +369,100 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
         children: [
           Row(
             children: [
-              Icon(isSale ? Icons.shopping_bag : Icons.shopping_cart, color: color, size: 20),
+              Icon(isQuote ? Icons.request_quote : (isSale ? Icons.shopping_bag : Icons.shopping_cart), color: color, size: 20),
               const SizedBox(width: 8),
               Expanded(
-                child: Text('${t.invoiceNumber} - ${t.tierName.toUpperCase()}', 
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                  overflow: TextOverflow.ellipsis),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${t.invoiceNumber} - ${t.tierName.toUpperCase()}', 
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 4),
+                    _buildPaymentStatusChip(t, paidAmount),
+                  ],
+                ),
               ),
               const SizedBox(width: 5),
-              Text('${_formatAmount(t.totalHT)} F', style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 15)),
+              Text('${_formatAmount(t.netToPay)} F', style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 15)),
             ],
           ),
           const Divider(height: 12),
-          FittedBox( // Empêche l'overflow en réduisant la taille si nécessaire
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(DateFormat('dd/MM/yy HH:mm').format(t.date), style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                const SizedBox(width: 10),
-                Row(
-                  children: [
-                    if (isAdminOrManager)
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.edit, color: Colors.blue, size: 18), 
-                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => TransactionFormScreen(type: widget.type, transaction: t))),
-                      ),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 18), 
-                      onPressed: () => PdfService.generateInvoice(t)
-                    ),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.local_shipping, color: Colors.blueGrey, size: 18), 
-                      onPressed: () => PdfService.generateDeliveryNote(t)
-                    ),
-                    if (isAdminOrManager)
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: Icon(Icons.account_balance, color: t.isPosted ? Colors.grey : Colors.teal, size: 18),
-                        onPressed: t.isPosted ? null : () => _transferToAccounting(context, firestoreService, t),
-                      ),
-                    if (isAdminOrManager)
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.delete, color: Colors.red, size: 18),
-                        onPressed: () => _confirmDelete(context, () => firestoreService.deleteTransaction(t.id)),
-                      ),
-                  ],
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (isQuote)
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                  onPressed: () => _showConvertDialog(context, firestoreService, t),
                 ),
-              ],
-            ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.share, color: Colors.teal, size: 20),
+                onPressed: () => _sendWhatsApp(context, firestoreService, t),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 20), 
+                onPressed: () => PdfService.generateInvoice(t)
+              ),
+              if (!isQuote)
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.local_shipping, color: Colors.blueGrey, size: 20), 
+                onPressed: () => PdfService.generateDeliveryNote(t)
+              ),
+              if (isAdminOrManager)
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                  onPressed: () => _confirmDelete(context, () => firestoreService.deleteTransaction(t.id)),
+                ),
+            ],
           ),
         ],
       ),
     );
+  }
+
+  void _showConvertDialog(BuildContext context, FirestoreService service, AppTransaction quote) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Valider le Devis'),
+        content: const Text('Voulez-vous transformer ce devis en Facture de Vente ?\n\nIl sera retiré des devis et apparaîtra dans les Ventes.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            onPressed: () async {
+              Navigator.pop(context);
+              await service.convertQuoteToSale(quote, _currentUser?.displayName ?? 'Admin');
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Devis converti en Facture avec succès !'), backgroundColor: Colors.green));
+            }, 
+            child: const Text('CONFIRMER', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _sendWhatsApp(BuildContext context, FirestoreService service, AppTransaction t) async {
+    // Récupérer le numéro du tiers
+    final tiers = await service.getTiers(null).first;
+    final tier = tiers.firstWhere((element) => element.id == t.tierId);
+    
+    if (tier.phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Le client n\'a pas de numéro de téléphone.')));
+      return;
+    }
+
+    try {
+      await WhatsAppService.sendTransactionToWhatsApp(t, tier.phone);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
   }
 
   void _transferToAccounting(BuildContext context, FirestoreService service, AppTransaction t) async {

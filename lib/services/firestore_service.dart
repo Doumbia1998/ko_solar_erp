@@ -29,6 +29,10 @@ class FirestoreService {
 
   Future<void> addJournalEntry(JournalEntry entry) => _db.collection('journal').add(entry.toMap());
 
+  Future<void> updateJournalEntry(JournalEntry entry) => _db.collection('journal').doc(entry.id).update(entry.toMap());
+
+  Future<void> deleteJournalEntry(String id) => _db.collection('journal').doc(id).delete();
+
   // --- TRANSFERTS DE STOCK ---
   Stream<List<StockTransfer>> getStockTransfers() {
     return _db.collection('stock_transfers').orderBy('date', descending: true).snapshots().map((snap) =>
@@ -181,12 +185,27 @@ class FirestoreService {
     // Ligne Tiers (Client 411 ou Fournisseur 401)
     final String tierAccount = t.type == TransactionType.sale ? '411100' : '401100';
     final String tierLabel = t.type == TransactionType.sale ? 'Clients' : 'Fournisseurs';
-    
-    // Ligne HT (Vente 701 ou Achat 601)
-    final String htAccount = t.type == TransactionType.sale ? '701100' : '601100';
-    final String htLabel = t.type == TransactionType.sale ? 'Ventes de marchandises' : 'Achats de marchandises';
 
-    // Écriture de la facture (Total HT)
+    // Ligne HT : Récupération des comptes spécifiques aux articles
+    // Note : Pour une facture multi-articles, on peut soit ventiler, 
+    // soit utiliser le compte du premier article pour simplifier selon votre demande
+    String htAccount = t.type == TransactionType.sale ? '701100' : '601100';
+    String htLabel = t.type == TransactionType.sale ? 'Ventes de marchandises' : 'Achats de marchandises';
+
+    // Si on a des articles, on cherche le compte paramétré sur le premier article
+    if (t.items.isNotEmpty) {
+      final pDoc = await _db.collection('products').doc(t.items.first.productId).get();
+      if (pDoc.exists) {
+        final pData = pDoc.data()!;
+        if (t.type == TransactionType.sale) {
+          htAccount = pData['compteVente'] ?? '701100';
+        } else {
+          htAccount = pData['compteAchat'] ?? '601100';
+        }
+      }
+    }
+
+    // Écriture de la facture (Tiers)
     DocumentReference j1 = _db.collection('journal').doc();
     batch.set(j1, JournalEntry(
       id: '', date: t.date, reference: t.invoiceNumber, journalCode: journal,
@@ -194,8 +213,10 @@ class FirestoreService {
       accountCode: tierAccount, accountLabel: tierLabel,
       debit: t.type == TransactionType.sale ? t.totalHT : 0,
       credit: t.type == TransactionType.sale ? 0 : t.totalHT,
+      tierId: t.tierId, tierName: t.tierName,
     ).toMap());
 
+    // Écriture de la facture (Produit/Charge)
     DocumentReference j2 = _db.collection('journal').doc();
     batch.set(j2, JournalEntry(
       id: '', date: t.date, reference: t.invoiceNumber, journalCode: journal,
@@ -424,9 +445,146 @@ class FirestoreService {
 
   Future<void> updateTransactionStatus(String id, bool isPosted) => 
     _db.collection('transactions').doc(id).update({'isPosted': isPosted});
+
+  Future<void> updateDeliveryStatus(String id, String status) => 
+    _db.collection('transactions').doc(id).update({'deliveryStatus': status});
+
+  Future<void> convertQuoteToSale(AppTransaction quote, String userName) async {
+    // 1. Marquer le devis comme converti (ou le supprimer, ici on va changer son type et rafraîchir les données)
+    final newInvoiceNumber = 'FAC-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+    
+    final sale = AppTransaction(
+      id: '', // Nouvel ID
+      invoiceNumber: newInvoiceNumber,
+      date: DateTime.now(),
+      tierId: quote.tierId,
+      tierName: quote.tierName,
+      type: TransactionType.sale,
+      items: quote.items,
+      totalHT: quote.totalHT,
+      amountPaid: 0,
+      paymentMethod: 'Espèces',
+      warehouseId: quote.warehouseId,
+      destination: quote.destination,
+      transportFees: quote.transportFees,
+      addTransport: quote.addTransport,
+      createdBy: userName,
+    );
+
+    // Ajouter la vente (cela gère aussi le stock et la compta via addTransaction)
+    await addTransaction(sale, userName);
+    
+    // Supprimer le devis original
+    await _db.collection('transactions').doc(quote.id).delete();
+  }
     
   Future<void> updatePaymentStatus(String id, bool isPosted) => 
     _db.collection('payments').doc(id).update({'isPosted': isPosted});
+
+  // --- SYNCHRONISATION GESTION -> COMPTABILITÉ ---
+  Future<void> syncManagementToAccounting() async {
+    final txsSnap = await _db.collection('transactions').get();
+    final paysSnap = await _db.collection('payments').get();
+    final journalSnap = await _db.collection('journal').get();
+
+    final List<AppTransaction> transactions = txsSnap.docs.map((d) => AppTransaction.fromMap(d.data(), d.id)).toList();
+    final List<Payment> payments = paysSnap.docs.map((d) => Payment.fromMap(d.data(), d.id)).toList();
+    final List<String> existingRefs = journalSnap.docs.map((d) => (d.data()['reference'] as String)).toList();
+
+    WriteBatch batch = _db.batch();
+    int count = 0;
+
+    // 1. Synchroniser les Transactions (Factures)
+    for (var t in transactions) {
+      if (!existingRefs.contains(t.invoiceNumber)) {
+        final String journal = t.type == TransactionType.sale ? 'VEN' : 'ACH';
+        final String tierAccount = t.type == TransactionType.sale ? '411100' : '401100';
+        final String tierLabel = t.type == TransactionType.sale ? 'Clients' : 'Fournisseurs';
+        final String htAccount = t.type == TransactionType.sale ? '701100' : '601100';
+        final String htLabel = t.type == TransactionType.sale ? 'Ventes de marchandises' : 'Achats de marchandises';
+
+        DocumentReference j1 = _db.collection('journal').doc();
+        batch.set(j1, JournalEntry(
+          id: '', date: t.date, reference: t.invoiceNumber, journalCode: journal,
+          label: '${t.type == TransactionType.sale ? "Vente" : "Achat"} - ${t.tierName}',
+          accountCode: tierAccount, accountLabel: tierLabel,
+          debit: t.type == TransactionType.sale ? t.totalHT : 0,
+          credit: t.type == TransactionType.sale ? 0 : t.totalHT,
+          tierId: t.tierId, tierName: t.tierName,
+        ).toMap());
+
+        DocumentReference j2 = _db.collection('journal').doc();
+        batch.set(j2, JournalEntry(
+          id: '', date: t.date, reference: t.invoiceNumber, journalCode: journal,
+          label: '${t.type == TransactionType.sale ? "Vente" : "Achat"} - ${t.tierName}',
+          accountCode: htAccount, accountLabel: htLabel,
+          debit: t.type == TransactionType.sale ? 0 : t.totalHT,
+          credit: t.type == TransactionType.sale ? t.totalHT : 0,
+        ).toMap());
+        count += 2;
+      }
+    }
+
+    // 2. Synchroniser les Règlements (Paiements)
+    for (var p in payments) {
+      String payRef = p.reference.isEmpty ? 'PAY-${p.id.substring(0,5)}' : p.reference;
+      // Pour les acomptes liés aux factures, on évite les doublons si la ref est le numéro de facture
+      if (!existingRefs.contains(payRef)) {
+        // --- LOGIQUE DE MAPPING JOURNAL / COMPTE ---
+        String journalCode = 'BQ';
+        String cashAccount = '521100';
+        String cashLabel = 'Banque';
+        String m = p.method.toLowerCase();
+
+        if (m.contains('sanogo')) {
+          journalCode = 'CAS';
+          cashAccount = '571200';
+          cashLabel = 'Caisse Sanogo';
+        } else if (m.contains('principal')) {
+          journalCode = 'CAP';
+          cashAccount = '571100';
+          cashLabel = 'Caisse Principal';
+        } else if (m.contains('dépendes') || m.contains('dépenses') || m.contains('depense')) {
+          journalCode = 'CAD';
+          cashAccount = '571300';
+          cashLabel = 'Caisse Dépenses';
+        } else if (m.contains('espèce') || m.contains('espece') || m.contains('cash')) {
+          journalCode = 'CAP'; // Par défaut Principal pour les espèces
+          cashAccount = '571100';
+          cashLabel = 'Caisse Principal';
+        } else if (m.contains('bim') || m.contains('banque') || m.contains('chèque') || m.contains('virement')) {
+          journalCode = 'BQ';
+          cashAccount = '521100';
+          cashLabel = 'Banque BIM SA';
+        }
+
+        final String tierAccount = p.tierType == TierType.client ? '411100' : '401100';
+        final String tierLabel = p.tierType == TierType.client ? 'Clients' : 'Fournisseurs';
+
+        DocumentReference j1 = _db.collection('journal').doc();
+        batch.set(j1, JournalEntry(
+          id: '', date: p.date, reference: payRef, journalCode: journalCode,
+          label: 'Règlement ${p.tierName}',
+          accountCode: cashAccount, accountLabel: cashLabel,
+          debit: p.tierType == TierType.client ? p.amount : 0,
+          credit: p.tierType == TierType.client ? 0 : p.amount,
+        ).toMap());
+
+        DocumentReference j2 = _db.collection('journal').doc();
+        batch.set(j2, JournalEntry(
+          id: '', date: p.date, reference: payRef, journalCode: journalCode,
+          label: 'Contrepartie règlement ${p.tierName}',
+          accountCode: tierAccount, accountLabel: tierLabel,
+          debit: p.tierType == TierType.client ? 0 : p.amount,
+          credit: p.tierType == TierType.client ? p.amount : 0,
+          tierId: p.tierId, tierName: p.tierName,
+        ).toMap());
+        count += 2;
+      }
+    }
+
+    if (count > 0) await batch.commit();
+  }
 
   // --- CLÔTURE DE JOURNÉE ---
   Future<void> performDailyClosing(DailyClosing closing) async {

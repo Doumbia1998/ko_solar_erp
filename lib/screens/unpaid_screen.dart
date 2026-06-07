@@ -20,82 +20,100 @@ class _UnpaidScreenState extends State<UnpaidScreen> {
   final currencyFormat = NumberFormat('#,###', 'fr_FR');
   TierType _selectedType = TierType.client;
 
-  bool _isMatchingInvoice(String? pInv, String? tInv, String pRef) {
-    if (tInv == null || tInv.isEmpty) return false;
-    String normT = tInv.trim().toUpperCase().replaceAll(' ', '');
-    if (pInv != null) {
-      String normP = pInv.trim().toUpperCase().replaceAll(' ', '');
-      if (normP == normT) return true;
-    }
-    String normRef = pRef.toUpperCase().replaceAll(' ', '');
-    if (normRef.contains(normT)) return true;
-    return false;
-  }
-
   @override
   Widget build(BuildContext context) {
     final firestoreService = Provider.of<FirestoreService>(context);
 
     return Scaffold(
+      backgroundColor: Colors.grey[200], // Fond gris pour faire ressortir le cadre
       appBar: AppBar(
         title: const Text('GESTION DES IMPAYÉS'),
         backgroundColor: const Color(0xFF1A237E),
         foregroundColor: Colors.white,
+        centerTitle: true,
       ),
-      body: Column(
-        children: [
-          _buildFilterHeader(),
-          Expanded(
-            child: FutureBuilder<List<Map<String, dynamic>>>(
-              future: firestoreService.getUnpaidReport(
-                tierType: _selectedType,
-                start: _startDate,
-                end: _endDate,
-              ),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return const Center(child: Text('Aucun impayé trouvé pour cette période'));
-                }
-
-                final unpaidResults = snapshot.data!;
-
-                return Column(
-                  children: [
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: unpaidResults.length,
-                        itemBuilder: (context, index) {
-                          final item = unpaidResults[index];
-                          final AppTransaction t = item['transaction'];
-                          return Card(
-                            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                            child: ListTile(
-                              title: Text(t.tierName.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Text('Facture ${t.invoiceNumber} du ${DateFormat('dd/MM/yy').format(t.date)}'),
-                              trailing: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text('${currencyFormat.format(item['remaining'])} F', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-                                  Text('Sur ${currencyFormat.format(t.netToPay)} F', style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1000), // Largeur max pour le Web
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)
+              ],
+            ),
+            child: Column(
+              children: [
+                _buildFilterHeader(),
+                Expanded(
+                  child: FutureBuilder<List<Map<String, dynamic>>>(
+                    future: firestoreService.getUnpaidReport(
+                      tierType: _selectedType,
+                      start: _startDate,
+                      end: _endDate,
                     ),
-                    _buildSummary(unpaidResults),
-                  ],
-                );
-              },
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      
+                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                        return const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.check_circle_outline, size: 60, color: Colors.green),
+                              SizedBox(height: 10),
+                              Text('Aucun impayé trouvé pour cette période', style: TextStyle(color: Colors.grey)),
+                            ],
+                          ),
+                        );
+                      }
+
+                      final unpaidResults = snapshot.data!;
+
+                      return Column(
+                        children: [
+                          Expanded(
+                            child: ListView.builder(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              itemCount: unpaidResults.length,
+                              itemBuilder: (context, index) {
+                                final item = unpaidResults[index];
+                                final AppTransaction t = item['transaction'];
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                  elevation: 1,
+                                  child: ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundColor: Colors.red[50],
+                                      child: const Icon(Icons.money_off, color: Colors.red),
+                                    ),
+                                    title: Text(t.tierName.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    subtitle: Text('Facture ${t.invoiceNumber} du ${DateFormat('dd/MM/yy').format(t.date)}'),
+                                    trailing: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        Text('${currencyFormat.format(item['remaining'])} F', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16)),
+                                        Text('Sur ${currencyFormat.format(t.netToPay)} F', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          _buildSummary(unpaidResults),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

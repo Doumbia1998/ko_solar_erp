@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "191924732396",
-    "project_id": "ssf-erp",
-    "storage_bucket": "ssf-erp.firebasestorage.app"
+    "project_number": "40200608427",
+    "project_id": "k-o-solar-erp",
+    "storage_bucket": "k-o-solar-erp.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:191924732396:android:2ad0df7556e27de38d80c9",
+        "mobilesdk_app_id": "1:40200608427:android:860885ea20793aa4d935ee",
         "android_client_info": {
-          "package_name": "com.example.ssf_erp"
+          "package_name": "com.kosolar.ko_solar_erp"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyASDDb1_WSi9quHJDJsA0rd2uFDpGUkxtg"
+          "current_key": "AIzaSyDFlPpOzi-q9L94H4iGXmTY7333NxUN5gI"
         }
       ],
       "services": {

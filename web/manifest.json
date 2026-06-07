@@ -1,11 +1,11 @@
 {
-    "name": "SSF ERP - Sanogo & Frère",
-    "short_name": "SSF ERP",
+    "name": "KO SOLAR ERP",
+    "short_name": "KO SOLAR",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#1A237E",
     "theme_color": "#1A237E",
-    "description": "Système de Gestion ERP pour SSF - Ventes, Achats et Transport.",
+    "description": "Système de Gestion ERP pour KO SOLAR - Ventes, Achats et Transport.",
     "orientation": "any",
     "prefer_related_applications": false,
     "icons": [

@@ -23,6 +23,7 @@ import 'daily_closing_screen.dart';
 import 'unpaid_report_screen.dart';
 import 'inventory_report_screen.dart';
 import 'stock_movement_screen.dart';
+import 'delivery_list_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -64,13 +65,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final canViewAccounting = isAdmin || currentUser.canViewAccounting;
     final canViewTiers = isAdmin || currentUser.canViewTiers;
     final canManageUsers = isAdmin || currentUser.canManageUsers;
+    final isStorekeeper = currentUser.role == UserRole.storekeeper;
 
-    final List<Widget> pages = [
-      const DashboardContent(),
-      const TransactionListScreen(type: TransactionType.purchase),
-      const TransactionListScreen(type: TransactionType.sale),
-      const TransportScreen(),
-    ];
+    // Définir les pages accessibles
+    final List<Widget> pages = isStorekeeper 
+      ? [const DeliveryListScreen(), const StockScreen()]
+      : [
+          const DashboardContent(),
+          const TransactionListScreen(type: TransactionType.purchase),
+          const TransactionListScreen(type: TransactionType.sale),
+          const TransportScreen(),
+        ];
 
     return Scaffold(
       appBar: AppBar(
@@ -78,7 +83,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(currentUser.displayName.toUpperCase(), style: const TextStyle(fontSize: 10, color: Colors.grey)),
-            const Text('SSF ERP VENTES & TRANSPORT', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E), fontSize: 17)),
+            Text(isStorekeeper ? 'ESPACE MAGASINIER' : 'KO SOLAR ERP', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E), fontSize: 17)),
           ],
         ),
         actions: [
@@ -96,49 +101,67 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text('SSF GESTION', style: TextStyle(color: Colors.white, fontSize: 24)),
+                  const Text('KO SOLAR GESTION', style: TextStyle(color: Colors.white, fontSize: 24)),
                   Text(currentUser.role.toString().split('.').last.toUpperCase(), style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                  if (isStorekeeper && currentUser.warehouseId != null)
+                    const Text('Dépôt Assigné', style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
-            _buildDrawerTile(context, Icons.inventory, 'Stocks', Colors.blueGrey, const StockScreen()),
-            _buildDrawerTile(context, Icons.warehouse, 'Gestion des Dépôts', Colors.brown, const WarehouseListScreen()),
-            _buildDrawerTile(context, Icons.calculate, 'Inventaire Valorisé', Colors.blue, const InventoryReportScreen()),
-            _buildDrawerTile(context, Icons.swap_vert, 'Mouvements de Stock', Colors.orange, const StockMovementScreen()),
-            _buildDrawerTile(context, Icons.payments, 'Règlements', Colors.green, const PaymentScreen()),
-            _buildDrawerTile(context, Icons.money_off, 'État des Impayés', Colors.red, const UnpaidReportScreen()),
-            _buildDrawerTile(context, Icons.lock_clock, 'Clôture de Journée', Colors.red, const DailyClosingScreen()),
-            const Divider(),
-            if (canViewTiers) ...[
-              _buildDrawerTile(context, Icons.people, 'Clients', Colors.indigo, const TierListScreen(type: TierType.client)),
-              _buildDrawerTile(context, Icons.business_center, 'Fournisseurs', Colors.teal, const TierListScreen(type: TierType.supplier)),
+            // Menu Magasinier (Strict)
+            if (isStorekeeper) ...[
+              _buildDrawerTile(context, Icons.local_shipping, 'Mes Livraisons (BL)', Colors.orange, const DeliveryListScreen()),
+              _buildDrawerTile(context, Icons.inventory, 'Consulter les Stocks', Colors.blueGrey, const StockScreen()),
             ],
-            if (canViewAccounting) ...[
+            
+            // Menu Admin / Manager / Employee
+            if (!isStorekeeper) ...[
+              _buildDrawerTile(context, Icons.inventory, 'Stocks', Colors.blueGrey, const StockScreen()),
+            _buildDrawerTile(context, Icons.request_quote, 'Devis', Colors.purple, const TransactionListScreen(type: TransactionType.quote)),
+            _buildDrawerTile(context, Icons.local_shipping, 'Livraisons (BL)', Colors.orange, const DeliveryListScreen()),
+              _buildDrawerTile(context, Icons.warehouse, 'Gestion des Dépôts', Colors.brown, const WarehouseListScreen()),
+              _buildDrawerTile(context, Icons.calculate, 'Inventaire Valorisé', Colors.blue, const InventoryReportScreen()),
+              _buildDrawerTile(context, Icons.swap_vert, 'Mouvements de Stock', Colors.orange, const StockMovementScreen()),
+              _buildDrawerTile(context, Icons.payments, 'Règlements', Colors.green, const PaymentScreen()),
+              _buildDrawerTile(context, Icons.money_off, 'État des Impayés', Colors.red, const UnpaidReportScreen()),
+              _buildDrawerTile(context, Icons.lock_clock, 'Clôture de Journée', Colors.red, const DailyClosingScreen()),
               const Divider(),
-              _buildDrawerTile(context, Icons.account_balance, 'Plan Comptable', Colors.indigo, const AccountListScreen()),
-              _buildDrawerTile(context, Icons.menu_book, 'Journal Comptable', Colors.brown, const JournalScreen()),
-            ],
-            if (canManageUsers) ...[
-              const Divider(),
-              _buildDrawerTile(context, Icons.analytics, 'Statistiques & Marges', Colors.orange, const StatisticsScreen()),
-              _buildDrawerTile(context, Icons.admin_panel_settings, 'Gestion Utilisateurs', Colors.red, const UserManagementScreen()),
+              if (canViewTiers) ...[
+                _buildDrawerTile(context, Icons.people, 'Clients', Colors.indigo, const TierListScreen(type: TierType.client)),
+                _buildDrawerTile(context, Icons.business_center, 'Fournisseurs', Colors.teal, const TierListScreen(type: TierType.supplier)),
+              ],
+              if (canViewAccounting) ...[
+                const Divider(),
+                _buildDrawerTile(context, Icons.account_balance, 'Plan Comptable', Colors.indigo, const AccountListScreen()),
+                _buildDrawerTile(context, Icons.menu_book, 'Journal Comptable', Colors.brown, const JournalScreen()),
+              ],
+              if (canManageUsers) ...[
+                const Divider(),
+                _buildDrawerTile(context, Icons.analytics, 'Statistiques & Marges', Colors.orange, const StatisticsScreen()),
+                _buildDrawerTile(context, Icons.admin_panel_settings, 'Gestion Utilisateurs', Colors.red, const UserManagementScreen()),
+              ],
             ],
           ],
         ),
       ),
-      body: pages[_currentIndex],
+      body: _currentIndex >= pages.length ? pages[0] : pages[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
+        currentIndex: _currentIndex >= pages.length ? 0 : _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
         type: BottomNavigationBarType.fixed,
         selectedItemColor: const Color(0xFF1A237E),
         unselectedItemColor: Colors.grey,
-        items: [
-          const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Accueil'),
-          if (canViewPurchases) const BottomNavigationBarItem(icon: Icon(Icons.shopping_cart), label: 'Achats'),
-          if (canViewSales) const BottomNavigationBarItem(icon: Icon(Icons.sell), label: 'Ventes'),
-          if (canViewTransport) const BottomNavigationBarItem(icon: Icon(Icons.local_shipping), label: 'Transport'),
-        ],
+        items: isStorekeeper 
+          ? [
+              const BottomNavigationBarItem(icon: Icon(Icons.local_shipping), label: 'Livraisons'),
+              const BottomNavigationBarItem(icon: Icon(Icons.inventory), label: 'Stocks'),
+            ]
+          : [
+              const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Accueil'),
+              if (canViewPurchases) const BottomNavigationBarItem(icon: Icon(Icons.shopping_cart), label: 'Achats'),
+              if (canViewSales) const BottomNavigationBarItem(icon: Icon(Icons.sell), label: 'Ventes'),
+              if (canViewTransport) const BottomNavigationBarItem(icon: Icon(Icons.local_shipping), label: 'Transport'),
+            ],
       ),
     );
   }
@@ -215,6 +238,10 @@ class DashboardContent extends StatelessWidget {
                 // --- TRANSPORT ---
                 double beneficeTrans = trips.fold(0.0, (sum, t) => sum + t.netProfit);
 
+                // --- TRÉSORERIE ---
+                // Calcul basé exclusivement sur le module de règlements (flux de caisse réels)
+                double soldeCaisse = reglementsSales - reglementsPurchases;
+
                 return Center(
                   child: Container(
                     constraints: const BoxConstraints(maxWidth: 1000),
@@ -282,6 +309,23 @@ class DashboardContent extends StatelessWidget {
                               },
                             ),
                           ],
+                          const SizedBox(height: 35),
+                          _buildSectionHeader('SITUATION TRÉSORERIE'),
+                          const SizedBox(height: 15),
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final isWeb = constraints.maxWidth > 600;
+                              return SizedBox(
+                                width: isWeb ? 300 : double.infinity,
+                                child: DashboardCard(
+                                  title: 'SOLDE CAISSE',
+                                  value: '${currencyFormat.format(soldeCaisse)} F',
+                                  icon: Icons.account_balance_wallet,
+                                  iconColor: Colors.indigo,
+                                ),
+                              );
+                            },
+                          ),
                           if (canViewTransport) ...[
                             const SizedBox(height: 35),
                             _buildSectionHeader('TRANSPORT & LOGISTIQUE'),
