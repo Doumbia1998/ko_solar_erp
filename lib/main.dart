@@ -44,7 +44,7 @@ class MyApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'KO SOLAR ERP',
+         title: 'KO SOLAR ERP',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,

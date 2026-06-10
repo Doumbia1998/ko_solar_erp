@@ -2,28 +2,27 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
+import 'dart:typed_data';
 import '../models/transaction.dart';
 import '../models/transport.dart';
 import '../models/stock_transfer.dart';
 import '../models/journal_entry.dart';
 import '../models/payment.dart';
+import '../models/account.dart';
+import '../models/tier.dart';
 import '../utils/number_to_words.dart';
 
 class PdfService {
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'fr_FR');
 
-  static Future<void> generateInvoice(AppTransaction transaction, {List<Payment>? allTierPayments, List<AppTransaction>? allTierTransactions}) async {
+  static Future<pw.Document> _buildInvoiceDoc(AppTransaction transaction, {List<Payment>? allTierPayments, List<AppTransaction>? allTierTransactions}) async {
     final pdf = pw.Document();
 
-    // --- LOGIQUE DE CALCUL DU SOLDE RÉEL ---
     double currentBalance = transaction.netToPay;
     double totalPaidForThisInvoice = 0;
 
     if (allTierPayments != null && allTierTransactions != null) {
-      // 1. Calculer le crédit total du tiers (Acomptes + Règlements)
       double totalCredit = allTierPayments.fold(0.0, (sum, p) => sum + p.amount);
-      
-      // Ajouter les acomptes des transactions (si pas déjà dans payments)
       for (var t in allTierTransactions) {
         if (t.amountPaid > 0) {
           bool acompteInPay = allTierPayments.any((p) => 
@@ -32,11 +31,8 @@ class PdfService {
           if (!acompteInPay) totalCredit += t.amountPaid;
         }
       }
-
-      // 2. Distribuer le crédit sur les factures par ordre chronologique
       final sortedTxs = List<AppTransaction>.from(allTierTransactions);
       sortedTxs.sort((a, b) => a.date.compareTo(b.date));
-
       double remainingCredit = totalCredit;
       for (var t in sortedTxs) {
         double amountToApply = remainingCredit >= t.netToPay ? t.netToPay : remainingCredit;
@@ -49,7 +45,6 @@ class PdfService {
         if (remainingCredit <= 0) break;
       }
     } else {
-      // Fallback si on n'a pas tout l'historique
       totalPaidForThisInvoice = transaction.amountPaid;
       currentBalance = transaction.netToPay - totalPaidForThisInvoice;
     }
@@ -97,7 +92,7 @@ class PdfService {
                     child: pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
-                        pw.Text('${transaction.type == TransactionType.sale ? "Client" : "Fournisseur"}: ${transaction.tierName}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        pw.Text('${transaction.type == TransactionType.sale ? "Client" : (transaction.type == TransactionType.quote ? "Client" : "Fournisseur")}: ${transaction.tierName}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
                         pw.Text('ID: ${transaction.tierId}'),
                       ],
                     ),
@@ -105,7 +100,7 @@ class PdfService {
                 ],
               ),
               pw.SizedBox(height: 30),
-              pw.Text(transaction.type == TransactionType.sale ? 'FACTURE DE VENTE' : 'FACTURE D\'ACHAT', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+              pw.Text(transaction.type == TransactionType.sale ? 'FACTURE DE VENTE' : (transaction.type == TransactionType.quote ? 'DEVIS PROFORMA' : 'FACTURE D\'ACHAT'), style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
               pw.SizedBox(height: 10),
               pw.TableHelper.fromTextArray(
                 headers: ['Désignation', 'Qté', 'Px unitaire', 'Remise', 'Total Net'],
@@ -148,10 +143,12 @@ class PdfService {
                           pw.Text('Frais de Transport: ${transaction.addTransport ? "+" : "-"} ${_currencyFormat.format(transaction.transportFees)} FCFA'),
                         pw.SizedBox(width: 200, child: pw.Divider()),
                         pw.Text('NET À PAYER: ${_currencyFormat.format(transaction.netToPay)} FCFA', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
-                        pw.SizedBox(height: 5),
-                        pw.Text('Total Déjà Réglé: ${_currencyFormat.format(totalPaidForThisInvoice)} FCFA'),
-                        pw.Text('SOLDE À RÉGLER: ${_currencyFormat.format(currentBalance)} FCFA', 
-                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: currentBalance > 0 ? PdfColors.red900 : PdfColors.green900, fontSize: 12)),
+                        if (transaction.type != TransactionType.quote) ...[
+                          pw.SizedBox(height: 5),
+                          pw.Text('Total Déjà Réglé: ${_currencyFormat.format(totalPaidForThisInvoice)} FCFA'),
+                          pw.Text('SOLDE À RÉGLER: ${_currencyFormat.format(currentBalance)} FCFA', 
+                            style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: currentBalance > 0 ? PdfColors.red900 : PdfColors.green900, fontSize: 12)),
+                        ],
                         pw.SizedBox(height: 10),
                         pw.Text('Arrêté la présente facture à la somme de :', style: pw.TextStyle(fontStyle: pw.FontStyle.italic, fontSize: 8)),
                         pw.Text(NumberToWords.convertToFr(transaction.netToPay), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
@@ -173,8 +170,17 @@ class PdfService {
         },
       ),
     );
+    return pdf;
+  }
 
+  static Future<void> generateInvoice(AppTransaction transaction, {List<Payment>? allTierPayments, List<AppTransaction>? allTierTransactions}) async {
+    final pdf = await _buildInvoiceDoc(transaction, allTierPayments: allTierPayments, allTierTransactions: allTierTransactions);
     await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
+  }
+
+  static Future<Uint8List> getInvoiceBytes(AppTransaction transaction) async {
+    final pdf = await _buildInvoiceDoc(transaction);
+    return pdf.save();
   }
 
   static Future<void> generateTruckReport(Truck truck, List<Trip> trips) async {
@@ -452,7 +458,6 @@ class PdfService {
   static Future<void> generateTrialBalance(List<JournalEntry> entries) async {
     final pdf = pw.Document();
     
-    // Calculer les soldes par compte
     Map<String, Map<String, dynamic>> balances = {};
     for (var e in entries) {
       if (!balances.containsKey(e.accountCode)) {
@@ -498,7 +503,6 @@ class PdfService {
 
   static Future<void> generateAgedBalance(List<JournalEntry> entries) async {
     final pdf = pw.Document();
-    // Simulation Balance Agée simplifiée (Etat des créances)
     var clientEntries = entries.where((e) => e.accountCode.startsWith('411')).toList();
 
     pdf.addPage(
@@ -528,6 +532,12 @@ class PdfService {
         ? "Du ${DateFormat('dd/MM/yy').format(start)} au ${DateFormat('dd/MM/yy').format(end)}"
         : "Le ${DateFormat('dd/MM/yyyy').format(DateTime.now())}";
 
+    // Déterminer le type majoritaire pour le titre
+    String typeLabel = "";
+    if (payments.isNotEmpty) {
+      typeLabel = payments.first.tierType == TierType.client ? "CLIENTS" : "FOURNISSEURS";
+    }
+
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
@@ -536,7 +546,7 @@ class PdfService {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Text('KO SOLAR - RAPPORT DE RÈGLEMENTS', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16, color: PdfColors.blue900)),
+                pw.Text('KO SOLAR - RAPPORT DE RÈGLEMENTS $typeLabel', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16, color: PdfColors.blue900)),
                 pw.Text(period, style: const pw.TextStyle(fontSize: 10)),
               ],
             ),
@@ -702,6 +712,99 @@ class PdfService {
     await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save(), name: 'Inventaire_${DateFormat('ddMMyy').format(DateTime.now())}.pdf');
   }
 
+  static Future<void> generateReconciliationReport({
+    required Account account,
+    required DateTime date,
+    required List<JournalEntry> entries,
+    required String filter,
+  }) async {
+    final pdf = pw.Document();
+    final double totalDebit = entries.fold(0, (sum, e) => sum + e.debit);
+    final double totalCredit = entries.fold(0, (sum, e) => sum + e.credit);
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(30),
+        header: (context) => pw.Column(
+          children: [
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text('KO SOLAR ERP', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16)),
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  children: [
+                    pw.Text('RAPPROCHEMENT BANCAIRE', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 18)),
+                    pw.Text(filter, style: const pw.TextStyle(fontSize: 12)),
+                    pw.Text('Date : ${DateFormat('dd/MM/yyyy').format(date)}', style: const pw.TextStyle(fontSize: 10)),
+                  ],
+                ),
+                pw.Text('Page : ${context.pageNumber}', style: const pw.TextStyle(fontSize: 10)),
+              ],
+            ),
+            pw.SizedBox(height: 5),
+            pw.Center(child: pw.Text('${account.code} - ${account.label.toUpperCase()}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12))),
+            pw.SizedBox(height: 10),
+            pw.Divider(),
+            pw.SizedBox(height: 10),
+          ],
+        ),
+        build: (pw.Context context) => [
+          pw.TableHelper.fromTextArray(
+            headers: ['Compte', 'Date', 'N° pièce', 'Libellé écriture', 'Lettrage', 'Mouvement débit', 'Mouvement crédit'],
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9),
+            cellStyle: const pw.TextStyle(fontSize: 8),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.grey200),
+            data: entries.map((e) => [
+              e.accountCode,
+              DateFormat('dd/MM/yy').format(e.date),
+              e.reference,
+              e.label,
+              e.lettering ?? '',
+              e.debit > 0 ? _currencyFormat.format(e.debit) : '',
+              e.credit > 0 ? _currencyFormat.format(e.credit) : '',
+            ]).toList(),
+            columnWidths: {
+              0: const pw.FlexColumnWidth(1.2),
+              1: const pw.FlexColumnWidth(1),
+              2: const pw.FlexColumnWidth(1),
+              3: const pw.FlexColumnWidth(3),
+              4: const pw.FlexColumnWidth(1),
+              5: const pw.FlexColumnWidth(1.5),
+              6: const pw.FlexColumnWidth(1.5),
+            },
+            cellAlignment: pw.Alignment.centerLeft,
+            cellAlignments: {
+              5: pw.Alignment.centerRight,
+              6: pw.Alignment.centerRight,
+            },
+          ),
+          pw.SizedBox(height: 10),
+          pw.Divider(),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.end,
+            children: [
+              pw.Text('TOTAL : ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
+              pw.SizedBox(width: 20),
+              pw.Container(
+                width: 100,
+                alignment: pw.Alignment.centerRight,
+                child: pw.Text(_currencyFormat.format(totalDebit), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
+              ),
+              pw.Container(
+                width: 100,
+                alignment: pw.Alignment.centerRight,
+                child: pw.Text(_currencyFormat.format(totalCredit), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save(), name: 'Rapprochement_${account.code}.pdf');
+  }
+
   static Future<void> generateStockMovementReport(List<Map<String, dynamic>> movements, DateTime start, DateTime end) async {
     final pdf = pw.Document();
     pdf.addPage(
@@ -725,11 +828,11 @@ class PdfService {
             headerDecoration: const pw.BoxDecoration(color: PdfColors.orange900),
             cellAlignment: pw.Alignment.center,
             columnWidths: {
-              0: const pw.FixedColumnWidth(80),  // Date
-              1: const pw.FlexColumnWidth(3),   // Produit (plus large)
-              2: const pw.FixedColumnWidth(60),  // Type
-              3: const pw.FlexColumnWidth(3),   // Tiers
-              4: const pw.FixedColumnWidth(40),  // Qté (ajustée)
+              0: const pw.FixedColumnWidth(80),
+              1: const pw.FlexColumnWidth(3),
+              2: const pw.FixedColumnWidth(60),
+              3: const pw.FlexColumnWidth(3),
+              4: const pw.FixedColumnWidth(40),
             },
             data: movements.map((m) => [
               DateFormat('dd/MM HH:mm').format(m['date']),

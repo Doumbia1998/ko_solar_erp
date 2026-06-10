@@ -104,13 +104,23 @@ class AppTransaction {
   }
 
   factory AppTransaction.fromMap(Map<String, dynamic> map, String id) {
+    TransactionType tType;
+    String typeStr = map['type'] ?? 'sale';
+    if (typeStr == 'sale') {
+      tType = TransactionType.sale;
+    } else if (typeStr == 'quote') {
+      tType = TransactionType.quote;
+    } else {
+      tType = TransactionType.purchase;
+    }
+
     return AppTransaction(
       id: id,
       invoiceNumber: map['invoiceNumber'] ?? '',
       date: (map['date'] as Timestamp).toDate(),
       tierId: map['tierId'] ?? '',
       tierName: map['tierName'] ?? '',
-      type: map['type'] == 'sale' ? TransactionType.sale : TransactionType.purchase,
+      type: tType,
       items: (map['items'] as List).map((i) => TransactionItem.fromMap(i)).toList(),
       totalHT: (map['totalHT'] ?? 0).toDouble(),
       amountPaid: (map['amountPaid'] ?? 0).toDouble(),

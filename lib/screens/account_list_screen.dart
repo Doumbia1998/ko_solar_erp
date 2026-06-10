@@ -13,7 +13,23 @@ class AccountListScreen extends StatefulWidget {
 class _AccountListScreenState extends State<AccountListScreen> {
   String _searchQuery = "";
   String _selectedNature = "Toutes";
-  final List<String> _natures = ['Toutes', 'Charge', 'Produit', 'Immobilisation', 'Client', 'Fournisseur', 'Banque', 'Caisse'];
+  final List<String> _natures = [
+    'Toutes', 
+    'Aucun', 
+    'Salarié', 
+    'Resultat-Gestion', 
+    'Capitaux', 
+    'Stock', 
+    'Titre', 
+    'Resultat-Bilan', 
+    'Immobilisation',
+    'Client', 
+    'Fournisseur', 
+    'Banque', 
+    'Caisse',
+    'Charge',
+    'Produit'
+  ];
 
   @override
   Widget build(BuildContext context) {

@@ -12,6 +12,9 @@ class JournalEntry {
   final String journalCode; // ACH, VEN, BQ, CAI
   final String? tierId;
   final String? tierName;
+  final bool isReconciled;
+  final DateTime? reconciliationDate;
+  final String? lettering; // Code de lettrage (ex: A, B, AA...)
 
   JournalEntry({
     required this.id,
@@ -25,6 +28,9 @@ class JournalEntry {
     required this.journalCode,
     this.tierId,
     this.tierName,
+    this.isReconciled = false,
+    this.reconciliationDate,
+    this.lettering,
   });
 
   Map<String, dynamic> toMap() {
@@ -39,6 +45,9 @@ class JournalEntry {
       'journalCode': journalCode,
       'tierId': tierId,
       'tierName': tierName,
+      'isReconciled': isReconciled,
+      'reconciliationDate': reconciliationDate != null ? Timestamp.fromDate(reconciliationDate!) : null,
+      'lettering': lettering,
     };
   }
 
@@ -55,6 +64,9 @@ class JournalEntry {
       journalCode: map['journalCode'] ?? '',
       tierId: map['tierId'],
       tierName: map['tierName'],
+      isReconciled: map['isReconciled'] ?? false,
+      reconciliationDate: map['reconciliationDate'] != null ? (map['reconciliationDate'] as Timestamp).toDate() : null,
+      lettering: map['lettering'],
     );
   }
 }

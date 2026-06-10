@@ -24,6 +24,9 @@ import 'unpaid_report_screen.dart';
 import 'inventory_report_screen.dart';
 import 'stock_movement_screen.dart';
 import 'delivery_list_screen.dart';
+import 'reconciliation_screen.dart';
+import 'task_assignment_screen.dart';
+import 'technician_task_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -66,16 +69,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final canViewTiers = isAdmin || currentUser.canViewTiers;
     final canManageUsers = isAdmin || currentUser.canManageUsers;
     final isStorekeeper = currentUser.role == UserRole.storekeeper;
+    final isTechnician = currentUser.role == UserRole.technician;
+    final isTechManager = isAdmin || currentUser.role == UserRole.tech_manager;
 
     // Définir les pages accessibles
-    final List<Widget> pages = isStorekeeper 
-      ? [const DeliveryListScreen(), const StockScreen()]
-      : [
-          const DashboardContent(),
-          const TransactionListScreen(type: TransactionType.purchase),
-          const TransactionListScreen(type: TransactionType.sale),
-          const TransportScreen(),
-        ];
+    List<Widget> pages;
+    if (isStorekeeper) {
+      pages = [const DeliveryListScreen(), const StockScreen()];
+    } else if (isTechnician) {
+      pages = [const TechnicianTaskScreen(), const StockScreen()];
+    } else {
+      pages = [
+        const DashboardContent(),
+        const TransactionListScreen(type: TransactionType.purchase),
+        const TransactionListScreen(type: TransactionType.sale),
+        const TransportScreen(),
+      ];
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -83,7 +93,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(currentUser.displayName.toUpperCase(), style: const TextStyle(fontSize: 10, color: Colors.grey)),
-            Text(isStorekeeper ? 'ESPACE MAGASINIER' : 'KO SOLAR ERP', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E), fontSize: 17)),
+            Text(isStorekeeper ? 'ESPACE MAGASINIER' : (isTechnician ? 'ESPACE TECHNICIEN' : 'KO SOLAR ERP'), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E), fontSize: 17)),
           ],
         ),
         actions: [
@@ -114,11 +124,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
               _buildDrawerTile(context, Icons.inventory, 'Consulter les Stocks', Colors.blueGrey, const StockScreen()),
             ],
             
-            // Menu Admin / Manager / Employee
-            if (!isStorekeeper) ...[
+            // Menu Technicien (Strict)
+            if (isTechnician) ...[
+              _buildDrawerTile(context, Icons.build, 'Mes Chantiers', Colors.orange, const TechnicianTaskScreen()),
+              _buildDrawerTile(context, Icons.inventory, 'Consulter les Stocks', Colors.blueGrey, const StockScreen()),
+            ],
+
+            // Menu Admin / Manager / Tech Manager
+            if (!isStorekeeper && !isTechnician) ...[
               _buildDrawerTile(context, Icons.inventory, 'Stocks', Colors.blueGrey, const StockScreen()),
             _buildDrawerTile(context, Icons.request_quote, 'Devis', Colors.purple, const TransactionListScreen(type: TransactionType.quote)),
             _buildDrawerTile(context, Icons.local_shipping, 'Livraisons (BL)', Colors.orange, const DeliveryListScreen()),
+
+              if (isTechManager)
+                _buildDrawerTile(context, Icons.assignment, 'Gestion des Chantiers', Colors.deepOrange, const TaskAssignmentScreen()),
+
               _buildDrawerTile(context, Icons.warehouse, 'Gestion des Dépôts', Colors.brown, const WarehouseListScreen()),
               _buildDrawerTile(context, Icons.calculate, 'Inventaire Valorisé', Colors.blue, const InventoryReportScreen()),
               _buildDrawerTile(context, Icons.swap_vert, 'Mouvements de Stock', Colors.orange, const StockMovementScreen()),
@@ -134,6 +154,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const Divider(),
                 _buildDrawerTile(context, Icons.account_balance, 'Plan Comptable', Colors.indigo, const AccountListScreen()),
                 _buildDrawerTile(context, Icons.menu_book, 'Journal Comptable', Colors.brown, const JournalScreen()),
+                _buildDrawerTile(context, Icons.account_balance_wallet, 'Rapprochement Bancaire', Colors.green, const ReconciliationScreen()),
               ],
               if (canManageUsers) ...[
                 const Divider(),
@@ -151,9 +172,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         type: BottomNavigationBarType.fixed,
         selectedItemColor: const Color(0xFF1A237E),
         unselectedItemColor: Colors.grey,
-        items: isStorekeeper 
+        items: isStorekeeper || isTechnician
           ? [
-              const BottomNavigationBarItem(icon: Icon(Icons.local_shipping), label: 'Livraisons'),
+              BottomNavigationBarItem(icon: Icon(isStorekeeper ? Icons.local_shipping : Icons.build), label: isStorekeeper ? 'Livraisons' : 'Chantiers'),
               const BottomNavigationBarItem(icon: Icon(Icons.inventory), label: 'Stocks'),
             ]
           : [

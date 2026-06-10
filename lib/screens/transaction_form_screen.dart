@@ -184,7 +184,15 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
   Widget build(BuildContext context) {
     final firestoreService = Provider.of<FirestoreService>(context);
     final isSale = widget.type == TransactionType.sale;
-    final color = isSale ? const Color(0xFF1A237E) : const Color(0xFF00796B);
+    final isQuote = widget.type == TransactionType.quote;
+    
+    Color color = const Color(0xFF1A237E); // Bleu par défaut
+    if (!isSale && !isQuote) color = const Color(0xFF00796B); // Vert pour Achats
+    if (isQuote) color = Colors.purple; // Violet pour Devis
+
+    String typeTitle = "Achat";
+    if (isSale) typeTitle = "Vente";
+    if (isQuote) typeTitle = "Devis";
 
     return StreamBuilder<List<Payment>>(
       stream: firestoreService.getPayments(),
@@ -212,11 +220,11 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
 
         return Scaffold(
           appBar: AppBar(
-            title: Text('${isSale ? "Vente" : "Achat"} ${widget.transaction?.invoiceNumber ?? "Nouveau"}'),
+            title: Text('$typeTitle ${widget.transaction?.invoiceNumber ?? "Nouveau"}'),
             backgroundColor: color,
             foregroundColor: Colors.white,
             actions: [
-              if (widget.transaction != null && isEditable)
+              if (widget.transaction != null && isEditable && !isQuote)
                 IconButton(
                   icon: const Icon(Icons.check_circle_outline),
                   tooltip: 'Valider et Verrouiller la facture',
@@ -261,10 +269,10 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                           children: [
                             ListTile(
                               leading: const CircleAvatar(child: Icon(Icons.person)),
-                              title: Text(_selectedTier?.name ?? 'Choisir un ${isSale ? "Client" : "Fournisseur"}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              title: Text(_selectedTier?.name ?? 'Choisir un ${(isSale || isQuote) ? "Client" : "Fournisseur"}', style: const TextStyle(fontWeight: FontWeight.bold)),
                               trailing: isEditable ? const Icon(Icons.search) : null,
                               onTap: isEditable ? () async {
-                                final tier = await Navigator.push<Tier>(context, MaterialPageRoute(builder: (context) => TierListScreen(type: isSale ? TierType.client : TierType.supplier, isSelectionMode: true)));
+                                final tier = await Navigator.push<Tier>(context, MaterialPageRoute(builder: (context) => TierListScreen(type: (isSale || isQuote) ? TierType.client : TierType.supplier, isSelectionMode: true)));
                                 if (tier != null) setState(() => _selectedTier = tier);
                               } : null,
                             ),
@@ -322,7 +330,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                                       productId: p.id, 
                                       productName: p.name, 
                                       quantity: 1, 
-                                      unitPrice: isSale ? p.sellingPrice : p.purchasePrice
+                                      unitPrice: (isSale || isQuote) ? p.sellingPrice : p.purchasePrice
                                     ));
                                   }
                                 });
@@ -349,7 +357,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                               Row(
                                 children: [
                                   Expanded(child: Text(item.productName.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis)),
-                                  if (isSale && prod != null)
+                                  if ((isSale || isQuote) && prod != null)
                                     Padding(
                                       padding: const EdgeInsets.only(right: 8.0),
                                       child: Text(
@@ -474,48 +482,50 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  flex: 3,
-                                  child: TextFormField(
-                                    controller: _amountPaidController,
-                                    enabled: isEditable,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Acompte', 
-                                      border: OutlineInputBorder(), 
-                                      contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                                      isDense: true,
+                            if (!isQuote) ...[
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    flex: 3,
+                                    child: TextFormField(
+                                      controller: _amountPaidController,
+                                      enabled: isEditable,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Acompte', 
+                                        border: OutlineInputBorder(), 
+                                        contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                                        isDense: true,
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      style: const TextStyle(fontSize: 13),
+                                      onChanged: (_) => setState(() {}),
                                     ),
-                                    keyboardType: TextInputType.number,
-                                    style: const TextStyle(fontSize: 13),
-                                    onChanged: (_) => setState(() {}),
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  flex: 2,
-                                  child: DropdownButtonFormField<String>(
-                                    value: _paymentMethod,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Mode', 
-                                      border: OutlineInputBorder(), 
-                                      contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                                      isDense: true,
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    flex: 2,
+                                    child: DropdownButtonFormField<String>(
+                                      value: _paymentMethod,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Mode', 
+                                        border: OutlineInputBorder(), 
+                                        contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                                        isDense: true,
+                                      ),
+                                      style: const TextStyle(fontSize: 12, color: Colors.black),
+                                      items: ['Espèces', 'Chèque', 'Virement', 'Mobile'].map((m) => DropdownMenuItem(value: m, child: Text(m, style: const TextStyle(fontSize: 12)))).toList(),
+                                      onChanged: isEditable ? (val) => setState(() => _paymentMethod = val!) : null,
                                     ),
-                                    style: const TextStyle(fontSize: 12, color: Colors.black),
-                                    items: ['Espèces', 'Chèque', 'Virement', 'Mobile'].map((m) => DropdownMenuItem(value: m, child: Text(m, style: const TextStyle(fontSize: 12)))).toList(),
-                                    onChanged: isEditable ? (val) => setState(() => _paymentMethod = val!) : null,
                                   ),
-                                ),
-                              ],
-                            ),
+                                ],
+                              ),
+                            ],
                             const Divider(height: 30),
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
-                                if (isSale) FittedBox(fit: BoxFit.scaleDown, child: Text('MARGE ESTIMÉE : ${_currencyFormat.format(_totalMarge)} FCFA', style: TextStyle(color: _totalMarge >= 0 ? Colors.green : Colors.red, fontWeight: FontWeight.bold))),
+                                if (isSale || isQuote) FittedBox(fit: BoxFit.scaleDown, child: Text('MARGE ESTIMÉE : ${_currencyFormat.format(_totalMarge)} FCFA', style: TextStyle(color: _totalMarge >= 0 ? Colors.green : Colors.red, fontWeight: FontWeight.bold))),
                                 FittedBox(fit: BoxFit.scaleDown, child: Text('TOTAL HT : ${_currencyFormat.format(_totalHT)} FCFA')),
                                 FittedBox(fit: BoxFit.scaleDown, child: Text('NET À PAYER : ${_currencyFormat.format(_netToPay)} FCFA', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color))),
                               ],
@@ -535,16 +545,20 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                             final auth = Provider.of<AuthService>(context, listen: false);
                             final user = await auth.getAppUser((await auth.user.first)!.uid);
                             
+                            String prefix = 'FA';
+                            if (widget.type == TransactionType.quote) prefix = 'DEV';
+                            if (widget.type == TransactionType.purchase) prefix = 'ACH';
+
                             final tx = AppTransaction(
                               id: widget.transaction?.id ?? '',
-                              invoiceNumber: widget.transaction?.invoiceNumber ?? 'FA${DateFormat('ddMMyyHHmm').format(DateTime.now())}',
+                              invoiceNumber: widget.transaction?.invoiceNumber ?? '$prefix${DateFormat('ddMMyyHHmm').format(DateTime.now())}',
                               date: widget.transaction?.date ?? DateTime.now(),
                               tierId: _selectedTier!.id,
                               tierName: _selectedTier!.name,
                               type: widget.type,
                               items: List.from(_items),
                               totalHT: _totalHT,
-                              amountPaid: double.tryParse(_amountPaidController.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0,
+                              amountPaid: isQuote ? 0 : (double.tryParse(_amountPaidController.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0),
                               paymentMethod: _paymentMethod,
                               warehouseId: _selectedWarehouse!.id,
                               destination: _destination,
@@ -560,7 +574,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                             Navigator.pop(context);
                           },
                           style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                          child: Text(widget.transaction == null ? 'VALIDER LA TRANSACTION' : 'MODIFIER LA TRANSACTION', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          child: Text(widget.transaction == null ? 'VALIDER ${typeTitle.toUpperCase()}' : 'MODIFIER ${typeTitle.toUpperCase()}', style: const TextStyle(fontWeight: FontWeight.bold)),
                         ),
                       ),
                   ],

@@ -47,7 +47,7 @@ class _PaymentScreenState extends State<PaymentScreen> with SingleTickerProvider
           IconButton(
             icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
             tooltip: 'Imprimer le rapport PDF',
-            onPressed: () => _generatePaymentReport(context, firestoreService),
+            onPressed: () => _generatePaymentReport(context, firestoreService, _tabController.index == 0 ? TierType.client : TierType.supplier),
           ),
           IconButton(
             icon: const Icon(Icons.date_range),
@@ -390,30 +390,30 @@ class _PaymentScreenState extends State<PaymentScreen> with SingleTickerProvider
     }
   }
 
-  Future<void> _generatePaymentReport(BuildContext context, FirestoreService service) async {
+  Future<void> _generatePaymentReport(BuildContext context, FirestoreService service, TierType type) async {
     final payments = await service.getPayments().first;
-    List<Payment> filtered = payments;
+    // Filtrer par type (Client ou Fournisseur)
+    List<Payment> filtered = payments.where((p) => p.tierType == type).toList();
 
     // Appliquer les mêmes filtres que l'affichage
     if (_startDate != null && _endDate != null) {
-      filtered = payments.where((p) => 
+      filtered = filtered.where((p) =>
         p.date.isAfter(_startDate!.subtract(const Duration(days: 1))) && 
         p.date.isBefore(_endDate!.add(const Duration(days: 1)))).toList();
     } else {
       // Si pas de date, par défaut aujourd'hui
       final now = DateTime.now();
-      filtered = payments.where((p) => 
+      filtered = filtered.where((p) =>
         p.date.year == now.year && p.date.month == now.month && p.date.day == now.day).toList();
     }
 
     if (filtered.isEmpty) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Aucun règlement à imprimer pour cette période')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Aucun règlement à imprimer pour cette catégorie et période')));
       }
       return;
     }
     
-    // Appel du service PDF (On va créer cette méthode)
     // ignore: use_build_context_synchronously
     PdfService.generatePaymentReport(filtered, _startDate, _endDate);
   }

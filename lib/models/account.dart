@@ -2,7 +2,7 @@ class Account {
   final String id;
   final String code;
   final String label;
-  final String nature;
+  final String nature; // Client, Fournisseur, Caisse, Banque, Charge, Produit, Immobilisation, Salarié, Capitaux, Stock, Titre, Resultat-Bilan, Resultat-Gestion, Aucun
   final bool isActive;
 
   Account({

@@ -1,17 +1,38 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/product.dart';
-import '../models/tier.dart';
-import '../models/transaction.dart';
-import '../models/warehouse.dart';
-import '../models/transport.dart';
-import '../models/payment.dart';
-import '../models/account.dart';
-import '../models/stock_transfer.dart';
-import '../models/journal_entry.dart';
 import '../models/daily_closing.dart';
+import '../models/task.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  // ... rest of the code ...
+
+  // --- MODULE TECHNICIENS ---
+  Stream<List<Task>> getTasks({String? technicianId}) {
+    Query query = _db.collection('tasks').orderBy('assignedAt', descending: true);
+    if (technicianId != null) {
+      query = query.where('technicianId', isEqualTo: technicianId);
+    }
+    return query.snapshots().map((snap) =>
+        snap.docs.map((doc) => Task.fromMap(doc.data() as Map<String, dynamic>, doc.id)).toList());
+  }
+
+  Future<void> addTask(Task task) => _db.collection('tasks').add(task.toMap());
+
+  Future<void> updateTaskStatus(String taskId, TaskStatus status, {Map<String, dynamic>? reportData}) {
+    Map<String, dynamic> data = {'status': status.toString().split('.').last};
+    if (reportData != null) {
+      data.addAll(reportData);
+      if (status == TaskStatus.completed) {
+        data['completedAt'] = Timestamp.now();
+      }
+    }
+    return _db.collection('tasks').doc(taskId).update(data);
+  }
+
+  Stream<List<AppUser>> getTechnicians() {
+    return _db.collection('users').where('role', isEqualTo: 'technician').snapshots().map((snap) =>
+        snap.docs.map((doc) => AppUser.fromMap(doc.data())).toList());
+  }
 
   FirestoreService() {
     // Activer la persistance locale pour plus de rapidité (Offline First)
@@ -32,6 +53,19 @@ class FirestoreService {
   Future<void> updateJournalEntry(JournalEntry entry) => _db.collection('journal').doc(entry.id).update(entry.toMap());
 
   Future<void> deleteJournalEntry(String id) => _db.collection('journal').doc(id).delete();
+
+  Future<void> updateReconciliationStatus(String entryId, bool isReconciled, DateTime? date) {
+    return _db.collection('journal').doc(entryId).update({
+      'isReconciled': isReconciled,
+      'reconciliationDate': date != null ? Timestamp.fromDate(date) : null,
+    });
+  }
+
+  Future<void> updateLettering(String entryId, String? lettering) {
+    return _db.collection('journal').doc(entryId).update({
+      'lettering': lettering,
+    });
+  }
 
   // --- TRANSFERTS DE STOCK ---
   Stream<List<StockTransfer>> getStockTransfers() {
@@ -162,6 +196,11 @@ class FirestoreService {
     data['createdBy'] = userName;
     
     batch.set(ref, data);
+
+    // Si c'est un DEVIS, on ne fait rien d'autre (ni stock, ni compta)
+    if (t.type == TransactionType.quote) {
+      return batch.commit();
+    }
 
     // 1. Mise à jour du stock global et local (par dépôt)
     for (var item in t.items) {
@@ -450,11 +489,12 @@ class FirestoreService {
     _db.collection('transactions').doc(id).update({'deliveryStatus': status});
 
   Future<void> convertQuoteToSale(AppTransaction quote, String userName) async {
-    // 1. Marquer le devis comme converti (ou le supprimer, ici on va changer son type et rafraîchir les données)
-    final newInvoiceNumber = 'FAC-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+    WriteBatch batch = _db.batch();
+
+    final newInvoiceNumber = 'FA${DateFormat('ddMMyyHHmm').format(DateTime.now())}';
     
     final sale = AppTransaction(
-      id: '', // Nouvel ID
+      id: _db.collection('transactions').doc().id,
       invoiceNumber: newInvoiceNumber,
       date: DateTime.now(),
       tierId: quote.tierId,
@@ -471,11 +511,45 @@ class FirestoreService {
       createdBy: userName,
     );
 
-    // Ajouter la vente (cela gère aussi le stock et la compta via addTransaction)
-    await addTransaction(sale, userName);
+    // 1. Créer la vente
+    batch.set(_db.collection('transactions').doc(sale.id), sale.toMap());
     
-    // Supprimer le devis original
-    await _db.collection('transactions').doc(quote.id).delete();
+    // 2. Supprimer le devis
+    batch.delete(_db.collection('transactions').doc(quote.id));
+
+    // 3. Gérer les stocks
+    for (var item in sale.items) {
+      DocumentReference pRef = _db.collection('products').doc(item.productId);
+      batch.update(pRef, {'totalQuantity': FieldValue.increment(-item.quantity)});
+
+      DocumentReference sRef = _db.collection('stocks').doc('${sale.warehouseId}_${item.productId}');
+      batch.set(sRef, {
+        'warehouseId': sale.warehouseId,
+        'productId': item.productId,
+        'quantity': FieldValue.increment(-item.quantity)
+      }, SetOptions(merge: true));
+    }
+
+    // 4. Écritures comptables
+    final String tierAccount = '411100';
+    final String htAccount = '701100';
+
+    batch.set(_db.collection('journal').doc(), JournalEntry(
+      id: '', date: sale.date, reference: sale.invoiceNumber, journalCode: 'VEN',
+      label: 'Vente (ex-Devis) - ${sale.tierName}',
+      accountCode: tierAccount, accountLabel: 'Clients',
+      debit: sale.totalHT, credit: 0,
+      tierId: sale.tierId, tierName: sale.tierName,
+    ).toMap());
+
+    batch.set(_db.collection('journal').doc(), JournalEntry(
+      id: '', date: sale.date, reference: sale.invoiceNumber, journalCode: 'VEN',
+      label: 'Vente (ex-Devis) - ${sale.tierName}',
+      accountCode: htAccount, accountLabel: 'Ventes de marchandises',
+      debit: 0, credit: sale.totalHT,
+    ).toMap());
+
+    await batch.commit();
   }
     
   Future<void> updatePaymentStatus(String id, bool isPosted) => 
@@ -633,37 +707,59 @@ class FirestoreService {
   }) async {
     final transType = tierType == TierType.client ? TransactionType.sale : TransactionType.purchase;
     
-    // 1. Récupérer TOUT l'historique sans limite de date pour le calcul du crédit
+    // 1. Récupérer TOUT l'historique (Transactions + Règlements + Journal)
     final allTxsSnap = await _db.collection('transactions')
         .where('type', isEqualTo: transType.toString().split('.').last)
         .get();
     final allPaysSnap = await _db.collection('payments')
         .where('tierType', isEqualTo: tierType == TierType.client ? 'client' : 'supplier')
         .get();
+    final allJournalSnap = await _db.collection('journal')
+        .where('accountCode', isEqualTo: tierType == TierType.client ? '411100' : '401100')
+        .get();
 
     List<AppTransaction> allTxs = allTxsSnap.docs.map((d) => AppTransaction.fromMap(d.data(), d.id)).toList();
     List<Payment> allPays = allPaysSnap.docs.map((d) => Payment.fromMap(d.data(), d.id)).toList();
+    List<JournalEntry> allJournal = allJournalSnap.docs.map((d) => JournalEntry.fromMap(d.data(), d.id)).toList();
 
-    // Trier les transactions par date pour l'imputation FIFO
     allTxs.sort((a, b) => a.date.compareTo(b.date));
 
-    // 2. Calculer par Tiers
+    // 2. Calculer le Crédit Total par Tiers
     Map<String, double> creditsByTier = {};
+
+    // a. Crédit via le module Règlements
     for (var p in allPays) {
       creditsByTier[p.tierId] = (creditsByTier[p.tierId] ?? 0) + p.amount;
     }
     
-    // Ajouter les acomptes des transactions qui ne sont pas dans 'payments'
+    // b. Crédit via les écritures manuelles du Journal (Comptabilité auxiliaire)
+    for (var j in allJournal) {
+      if (j.tierId != null) {
+        // Pour un client (411), un Crédit diminue sa dette
+        // Pour un fournisseur (401), un Débit diminue notre dette
+        double amount = tierType == TierType.client ? j.credit : j.debit;
+        if (amount > 0) {
+          // On vérifie que ce n'est pas une écriture automatique déjà comptée (via invoiceNumber)
+          bool alreadyCounted = allPays.any((p) => p.invoiceNumber == j.reference || p.reference.contains(j.reference));
+          if (!alreadyCounted) {
+            creditsByTier[j.tierId!] = (creditsByTier[j.tierId!] ?? 0) + amount;
+          }
+        }
+      }
+    }
+
+    // c. Crédit via les acomptes directs en facture
     for (var t in allTxs) {
       if (t.amountPaid > 0) {
-        bool dejaCompte = allPays.any((p) => p.invoiceNumber == t.invoiceNumber || p.reference.contains(t.invoiceNumber));
+        bool dejaCompte = allPays.any((p) => p.invoiceNumber == t.invoiceNumber || p.reference.contains(t.invoiceNumber)) ||
+                          allJournal.any((j) => j.reference == t.invoiceNumber);
         if (!dejaCompte) {
           creditsByTier[t.tierId] = (creditsByTier[t.tierId] ?? 0) + t.amountPaid;
         }
       }
     }
 
-    // 3. Imputer les crédits et filtrer par la période demandée
+    // 3. Imputer les crédits (FIFO)
     List<Map<String, dynamic>> results = [];
     Map<String, double> remainingCredits = Map.from(creditsByTier);
 
@@ -674,7 +770,6 @@ class FirestoreService {
       
       remainingCredits[t.tierId] = creditTier - amountApplied;
 
-      // On n'ajoute au rapport que si c'est dans la période ET qu'il reste un solde
       if (reste > 10 && t.date.isAfter(start.subtract(const Duration(days: 1))) && t.date.isBefore(end.add(const Duration(days: 1)))) {
         results.add({
           'transaction': t,

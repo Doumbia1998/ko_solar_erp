@@ -1,4 +1,4 @@
-enum UserRole { admin, manager, employee, storekeeper }
+enum UserRole { admin, manager, employee, storekeeper, technician, tech_manager }
 
 class AppUser {
   final String uid;

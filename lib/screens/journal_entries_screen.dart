@@ -5,6 +5,8 @@ import '../services/firestore_service.dart';
 import '../models/journal_entry.dart';
 import 'journal_form_screen.dart';
 import '../services/pdf_service.dart';
+import '../models/tier.dart';
+import 'tier_detail_screen.dart';
 
 class JournalEntriesScreen extends StatelessWidget {
   final String journalCode;
@@ -117,7 +119,22 @@ class JournalEntriesScreen extends StatelessWidget {
                               children: [
                                 Text(e.accountCode, style: const TextStyle(fontSize: 12)),
                                 if (e.tierName != null) 
-                                  Text(e.tierName!.toUpperCase(), style: const TextStyle(fontSize: 10, color: Colors.blue, fontWeight: FontWeight.bold)),
+                                  InkWell(
+                                    onTap: () async {
+                                      final allTiers = await service.getTiers(null).first;
+                                      try {
+                                        final tier = allTiers.firstWhere((t) => t.id == e.tierId);
+                                        if (context.mounted) {
+                                          Navigator.push(context, MaterialPageRoute(builder: (context) => TierDetailScreen(tier: tier)));
+                                        }
+                                      } catch(_) {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Impossible de trouver la fiche client détaillée.')));
+                                        }
+                                      }
+                                    },
+                                    child: Text(e.tierName!.toUpperCase(), style: const TextStyle(fontSize: 10, color: Colors.blue, fontWeight: FontWeight.bold, decoration: TextDecoration.underline)),
+                                  ),
                               ],
                             )),
                             DataCell(Text(e.label)),
