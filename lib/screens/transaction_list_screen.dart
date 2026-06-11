@@ -25,6 +25,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
   String _searchQuery = "";
   AppUser? _currentUser;
   DateTimeRange? _selectedDateRange;
+  String _paymentStatusFilter = "Tous"; // Nouveau filtre
 
   @override
   void initState() {
@@ -66,11 +67,12 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     if (isSale) title = 'Ventes';
     if (isQuote) title = 'Devis';
 
-    final isAdminOrManager = _currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.manager;
+    final isWeb = MediaQuery.of(context).size.width > 900;
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FB),
       appBar: AppBar(
-        title: Text(title),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
@@ -79,29 +81,53 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
             icon: const Icon(Icons.date_range, color: Colors.black),
             onPressed: _pickDateRange,
           ),
+          const SizedBox(width: 10),
         ],
       ),
       body: Center(
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 1000),
+          // On élargit l'interface pour occuper plus d'espace sur Web
+          constraints: BoxConstraints(maxWidth: isWeb ? 1600 : double.infinity),
+          padding: EdgeInsets.symmetric(horizontal: isWeb ? 30 : 0),
           child: Column(
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Text(
-                  "Période : ${DateFormat('dd/MM/yy').format(_selectedDateRange!.start)} au ${DateFormat('dd/MM/yy').format(_selectedDateRange!.end)}",
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.bold),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: TextField(
-                  onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
-                  decoration: InputDecoration(
-                    hintText: 'Rechercher...',
-                    prefixIcon: const Icon(Icons.search),
-                    border: UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey.shade300)),
-                  ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    if (!isQuote)
+                      Row(
+                        children: [
+                          _statusFilterChip("Tous"),
+                          _statusFilterChip("Impayée"),
+                          _statusFilterChip("Commencée"),
+                          _statusFilterChip("Payée"),
+                        ],
+                      )
+                    else
+                      const SizedBox(),
+                    Text(
+                      "Période : ${DateFormat('dd/MM/yy').format(_selectedDateRange!.start)} au ${DateFormat('dd/MM/yy').format(_selectedDateRange!.end)}",
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.bold),
+                    ),
+                    SizedBox(
+                      width: isWeb ? 400 : 200,
+                      height: 40,
+                      child: TextField(
+                        onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
+                        decoration: InputDecoration(
+                          hintText: 'Rechercher...',
+                          prefixIcon: const Icon(Icons.search, size: 20),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade200)),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               StreamBuilder<List<AppTransaction>>(
@@ -116,54 +142,48 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                   double total = transactions.fold(0.0, (sum, t) => sum + t.netToPay);
                   return Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                    margin: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
                       color: color,
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: [
-                        BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 10, offset: const Offset(0, 5))
+                        BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 4))
                       ],
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                isQuote ? 'TOTAL DEVIS' : (isSale ? 'TOTAL CA VENTES' : 'TOTAL ACHATS'),
-                                style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 13),
-                              ),
-                              FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  '${_formatAmount(total)} FCFA',
-                                  style: const TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold, fontSize: 24),
-                                ),
-                              ),
-                            ],
-                          ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              isQuote ? 'TOTAL DEVIS' : (isSale ? 'TOTAL CA VENTES' : 'TOTAL ACHATS'),
+                              style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                            Text(
+                              '${_formatAmount(total)} FCFA',
+                              style: const TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold, fontSize: 22),
+                            ),
+                          ],
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.print, color: Colors.white, size: 30),
-                          tooltip: 'Rapport détaillé',
-                          onPressed: () {
-                            ReportService.generateDailyActivityReport(transactions, title);
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.picture_as_pdf, color: Colors.white, size: 30),
-                          onPressed: () {
-                            PdfService.generateGlobalTransactionReport(
-                              type: title,
-                              start: _selectedDateRange!.start,
-                              end: _selectedDateRange!.end,
-                              transactions: transactions,
-                            );
-                          },
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.print, color: Colors.white, size: 24),
+                              tooltip: 'Rapport détaillé',
+                              onPressed: () => ReportService.generateDailyActivityReport(transactions, title),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.picture_as_pdf, color: Colors.white, size: 24),
+                              onPressed: () => PdfService.generateGlobalTransactionReport(
+                                type: title,
+                                start: _selectedDateRange!.start,
+                                end: _selectedDateRange!.end,
+                                transactions: transactions,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -194,10 +214,26 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                           ).toList();
                         }
 
+                        // Nouveau : Filtrage par statut de paiement
+                        if (!isQuote && _paymentStatusFilter != "Tous") {
+                          transactions = transactions.where((t) {
+                            double net = t.netToPay;
+                            double paid = payments
+                                .where((p) => p.invoiceNumber == t.invoiceNumber)
+                                .fold(0.0, (sum, p) => sum + p.amount);
+                            if (paid == 0) paid = t.amountPaid;
+
+                            if (_paymentStatusFilter == "Impayée") return paid <= 0;
+                            if (_paymentStatusFilter == "Payée") return paid >= (net - 5);
+                            if (_paymentStatusFilter == "Commencée") return paid > 0 && paid < (net - 5);
+                            return true;
+                          }).toList();
+                        }
+
                         if (transactions.isEmpty) return const Center(child: Text('Aucun historique disponible'));
 
                         return ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           itemCount: transactions.length,
                           itemBuilder: (context, index) {
                             final t = transactions[index];
@@ -207,9 +243,9 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                             if (realTotalPaid == 0) realTotalPaid = t.amountPaid;
 
                             return Card(
-                              elevation: 2,
-                              margin: const EdgeInsets.only(bottom: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              elevation: 1,
+                              margin: const EdgeInsets.only(bottom: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                               child: _buildItem(t, color, isSale, firestoreService, realTotalPaid),
                             );
                           },
@@ -226,7 +262,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => TransactionFormScreen(type: widget.type))),
         backgroundColor: color,
-        label: Text('Nouveau $title', style: const TextStyle(color: Colors.white)),
+        label: Text('NOUVEAU $title', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         icon: const Icon(Icons.add, color: Colors.white),
       ),
     );
@@ -265,10 +301,10 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
 
   Widget _buildItem(AppTransaction t, Color color, bool isSale, FirestoreService firestoreService, double paidAmount) {
     final isQuote = t.type == TransactionType.quote;
-    final isMobile = MediaQuery.of(context).size.width < 600;
+    final isMobile = MediaQuery.of(context).size.width < 700;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
       child: Column(
         children: [
           ListTile(
@@ -276,11 +312,11 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
             leading: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
-              child: Icon(isQuote ? Icons.request_quote : (isSale ? Icons.shopping_bag : Icons.shopping_cart), color: color),
+              child: Icon(isQuote ? Icons.request_quote : (isSale ? Icons.shopping_bag : Icons.shopping_cart), color: color, size: 24),
             ),
             title: Row(
               children: [
-                Expanded(child: Text('${isQuote ? "Devis" : (isSale ? "Vente" : "Achat")} ${t.invoiceNumber}', style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
+                Expanded(child: Text('${isQuote ? "Devis" : (isSale ? "Vente" : "Achat")} ${t.invoiceNumber}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15), overflow: TextOverflow.ellipsis)),
                 const SizedBox(width: 10),
                 _buildPaymentStatusChip(t, paidAmount),
               ],
@@ -288,8 +324,8 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(t.tierName.toUpperCase(), style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w500)),
-                Text(DateFormat('dd/MM/yyyy HH:mm').format(t.date), style: const TextStyle(fontSize: 12)),
+                Text(t.tierName.toUpperCase(), style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w600, fontSize: 13)),
+                Text(DateFormat('dd/MM/yyyy HH:mm').format(t.date), style: const TextStyle(fontSize: 11)),
               ],
             ),
             trailing: isMobile ? null : Text('${_formatAmount(t.netToPay)} F', style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 16)),
@@ -324,39 +360,39 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
         if (isQuote)
           IconButton(
             icon: const Icon(Icons.check_circle, color: Colors.green, size: 22),
-            tooltip: 'Convertir en Vente',
+            tooltip: 'VALIDER ET TRANSFORMER EN FACTURE',
             onPressed: () => _showConvertDialog(context, firestoreService, t),
           ),
         IconButton(
-          icon: const Icon(Icons.edit, color: Colors.blue, size: 22),
+          icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
           tooltip: 'Modifier',
           onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => TransactionFormScreen(type: widget.type, transaction: t))),
         ),
         IconButton(
-          icon: const Icon(Icons.share, color: Colors.teal, size: 22),
+          icon: const Icon(Icons.share, color: Colors.teal, size: 20),
           tooltip: 'WhatsApp',
           onPressed: () => _sendWhatsApp(context, firestoreService, t),
         ),
         IconButton(
-          icon: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 22), 
+          icon: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 20),
           tooltip: 'Facture PDF',
           onPressed: () => PdfService.generateInvoice(t)
         ),
         if (!isQuote)
           IconButton(
-            icon: const Icon(Icons.local_shipping, color: Colors.blueGrey, size: 22), 
+            icon: const Icon(Icons.local_shipping, color: Colors.blueGrey, size: 20),
             tooltip: 'Bon de Livraison',
             onPressed: () => PdfService.generateDeliveryNote(t)
           ),
         if (isAdminOrManager && !isQuote)
           IconButton(
-            icon: Icon(Icons.account_balance, color: t.isPosted ? Colors.grey : Colors.teal, size: 22),
+            icon: Icon(Icons.account_balance, color: t.isPosted ? Colors.grey : Colors.teal, size: 20),
             tooltip: t.isPosted ? 'Déjà comptabilisé' : 'Transférer en Compta',
             onPressed: t.isPosted ? null : () => _transferToAccounting(context, firestoreService, t),
           ),
         if (isAdminOrManager)
         IconButton(
-          icon: const Icon(Icons.delete, color: Colors.red, size: 22),
+          icon: const Icon(Icons.delete, color: Colors.red, size: 20),
           tooltip: 'Supprimer',
           onPressed: () => _confirmDelete(context, () => firestoreService.deleteTransaction(t.id)),
         ),
@@ -470,5 +506,24 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
   Future<void> _pickDateRange() async {
     final picked = await showDateRangePicker(context: context, firstDate: DateTime(2020), lastDate: DateTime.now(), initialDateRange: _selectedDateRange);
     if (picked != null) setState(() => _selectedDateRange = picked);
+  }
+
+  Widget _statusFilterChip(String status) {
+    bool isSelected = _paymentStatusFilter == status;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8.0),
+      child: FilterChip(
+        label: Text(status, style: TextStyle(fontSize: 11, color: isSelected ? Colors.white : Colors.black, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+        selected: isSelected,
+        onSelected: (bool selected) {
+          setState(() {
+            _paymentStatusFilter = status;
+          });
+        },
+        selectedColor: const Color(0xFF1A237E),
+        backgroundColor: Colors.grey.shade200,
+        checkmarkColor: Colors.white,
+      ),
+    );
   }
 }

@@ -97,6 +97,8 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       case 'admin': return Colors.red;
       case 'manager': return Colors.orange;
       case 'storekeeper': return Colors.green;
+      case 'technician': return Colors.deepOrange;
+      case 'tech_manager': return Colors.indigo;
       default: return Colors.blueGrey;
     }
   }
@@ -287,6 +289,12 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                       } else if (_selectedRole == UserRole.storekeeper) {
                         _canViewProducts = true;
                         _canViewPurchases = _canViewSales = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = false;
+                      } else if (_selectedRole == UserRole.technician) {
+                        _canViewProducts = true;
+                        _canViewPurchases = _canViewSales = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = false;
+                      } else if (_selectedRole == UserRole.tech_manager) {
+                        _canViewSales = _canViewProducts = true;
+                        _canViewPurchases = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = false;
                       } else if (_selectedRole == UserRole.manager) {
                         _canViewPurchases = _canViewSales = _canViewProducts = _canEditProducts = _canViewTiers = _canEditTiers = true;
                         _canDeleteSales = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canDeleteTiers = _canViewTransport = _canEditTransport = false;

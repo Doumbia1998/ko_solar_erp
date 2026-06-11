@@ -11,7 +11,8 @@ class Payment {
   final String method;
   final String reference;
   final String? invoiceNumber; // Lien avec une facture spécifique
-  final bool isPosted; 
+  final String? journalCode; // Code journal (ex: CA, BQ)
+  final bool isPosted;
   final String createdBy; // Nom de l'utilisateur
 
   Payment({
@@ -24,6 +25,7 @@ class Payment {
     required this.method,
     required this.reference,
     this.invoiceNumber,
+    this.journalCode,
     this.isPosted = false,
     this.createdBy = '',
   });
@@ -39,6 +41,7 @@ class Payment {
       'method': method,
       'reference': reference,
       'invoiceNumber': invoiceNumber,
+      'journalCode': journalCode,
       'isPosted': isPosted,
       'createdBy': createdBy,
     };
@@ -55,6 +58,7 @@ class Payment {
       method: map['method'] ?? '',
       reference: map['reference'] ?? '',
       invoiceNumber: map['invoiceNumber'],
+      journalCode: map['journalCode'],
       isPosted: map['isPosted'] ?? false,
       createdBy: map['createdBy'] ?? '',
     );

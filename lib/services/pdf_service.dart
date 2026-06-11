@@ -10,6 +10,7 @@ import '../models/journal_entry.dart';
 import '../models/payment.dart';
 import '../models/account.dart';
 import '../models/tier.dart';
+import '../models/task.dart';
 import '../utils/number_to_words.dart';
 
 class PdfService {
@@ -973,6 +974,117 @@ class PdfService {
     );
 
     await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save(), name: 'Rapport_Marge_Detaille.pdf');
+  }
+
+  static Future<void> generateTechnicianReport(Task task, {String? managerName}) async {
+    final pdf = pw.Document();
+    final now = DateTime.now();
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('KO SOLAR ERP', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text('RAPPORT DE CHANTIER CLÔTURÉ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                      pw.Text('Date : ${DateFormat('dd/MM/yyyy HH:mm').format(task.completedAt ?? now)}'),
+                    ],
+                  ),
+                ],
+              ),
+              pw.Divider(thickness: 2, color: PdfColors.blue900),
+              pw.SizedBox(height: 20),
+
+              pw.Container(
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey400)),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    _reportRow('CHANTIER N°', task.invoiceNumber, isBold: true),
+                    _reportRow('CLIENT', task.clientName.toUpperCase()),
+                    _reportRow('LIEU DE L\'INSTALLATION', task.siteLocation ?? 'Non précisé'),
+                    _reportRow('LOCALISATION GPS', task.gpsLocation ?? 'Non précisée'),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 20),
+
+              pw.Text('ÉQUIPE TECHNIQUE', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, decoration: pw.TextDecoration.underline)),
+              pw.SizedBox(height: 5),
+              pw.Text('Technicien principal : ${task.technicianName.toUpperCase()}', style: const pw.TextStyle(fontSize: 12)),
+              pw.Text('Date d\'assignation : ${DateFormat('dd/MM/yyyy').format(task.assignedAt)}', style: const pw.TextStyle(fontSize: 11)),
+              if (task.completedAt != null)
+                pw.Text('Date de clôture : ${DateFormat('dd/MM/yyyy').format(task.completedAt!)}', style: const pw.TextStyle(fontSize: 11)),
+              pw.SizedBox(height: 20),
+
+              pw.Text('DÉTAILS DES TRAVAUX EFFECTUÉS', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, decoration: pw.TextDecoration.underline)),
+              pw.SizedBox(height: 10),
+              pw.Container(
+                width: double.infinity,
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(color: PdfColors.grey100),
+                child: pw.Text(task.reportDescription ?? 'Aucune description fournie.', style: const pw.TextStyle(fontSize: 11)),
+              ),
+
+              pw.SizedBox(height: 30),
+              if (task.managerComment != null) ...[
+                pw.Text('OBSERVATIONS DU RESPONSABLE', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColors.red900)),
+                pw.SizedBox(height: 5),
+                pw.Text(task.managerComment!, style: pw.TextStyle(fontSize: 10, fontStyle: pw.FontStyle.italic)),
+                pw.SizedBox(height: 20),
+              ],
+
+              pw.Spacer(),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    children: [
+                      pw.Text('Signature Technicien', style: const pw.TextStyle(fontSize: 10, decoration: pw.TextDecoration.underline)),
+                      pw.SizedBox(height: 40),
+                      pw.Text(task.technicianName.toUpperCase(), style: const pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                    ],
+                  ),
+                  pw.Column(
+                    children: [
+                      pw.Text('Approbation Responsable', style: const pw.TextStyle(fontSize: 10, decoration: pw.TextDecoration.underline)),
+                      pw.SizedBox(height: 40),
+                      pw.Text(task.approvedBy?.toUpperCase() ?? '........................', style: const pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                    ],
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 20),
+              pw.Center(child: pw.Text('KO SOLAR - Document certifié conforme', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600))),
+            ],
+          );
+        },
+      ),
+    );
+
+    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save(), name: 'Rapport_Chantier_${task.invoiceNumber}.pdf');
+  }
+
+  static pw.Widget _reportRow(String label, String value, {bool isBold = false}) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 4),
+      child: pw.Row(
+        children: [
+          pw.SizedBox(width: 150, child: pw.Text(label, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold))),
+          pw.Text(': ', style: const pw.TextStyle(fontSize: 10)),
+          pw.Expanded(child: pw.Text(value, style: pw.TextStyle(fontSize: 10, fontWeight: isBold ? pw.FontWeight.bold : null))),
+        ],
+      ),
+    );
   }
 
   static pw.Widget _buildPdfRow(String label, String value, {bool isBold = false}) {

@@ -3,6 +3,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import '../models/transaction.dart';
+import '../models/payment.dart';
 
 class ReportService {
   static final _format = NumberFormat('#,###', 'fr_FR');
@@ -50,27 +51,12 @@ class ReportService {
               ]
             ),
             pw.SizedBox(height: 5),
-            pw.Container(
-              decoration: pw.BoxDecoration(border: pw.Border.all(width: 1)),
-              child: pw.Row(
-                children: [
-                  _headerCell('Référence', 1.5),
-                  _headerCell('Désignation', 3),
-                  _headerCell('Quantité', 1),
-                  _headerCell('Px Unit. HT', 1.5),
-                  _headerCell('Remise', 1),
-                  _headerCell('Montant HT', 1.5),
-                ]
-              )
-            ),
           ],
         ),
         build: (pw.Context context) {
           List<pw.Widget> rows = [];
-
           for (var t in txs) {
             String shortTierId = t.tierId.length > 8 ? t.tierId.substring(0, 8) : t.tierId;
-            // Ligne en-tête de la facture
             rows.add(
               pw.Container(
                 padding: const pw.EdgeInsets.symmetric(vertical: 5, horizontal: 5),
@@ -85,8 +71,6 @@ class ReportService {
                 )
               )
             );
-
-            // Lignes articles
             for (var item in t.items) {
               String shortProdId = item.productId.length > 8 ? item.productId.substring(0, 8) : item.productId;
               rows.add(
@@ -105,16 +89,12 @@ class ReportService {
                 )
               );
             }
-
-            // Ligne total facture
             rows.add(
               pw.Padding(
                 padding: const pw.EdgeInsets.symmetric(vertical: 2, horizontal: 5),
                 child: pw.Row(
                   children: [
                     pw.Text('Total  Facture cpta', style: const pw.TextStyle(fontSize: 9, fontStyle: pw.FontStyle.italic)),
-                    pw.SizedBox(width: 50),
-                    pw.Text('N°   ${t.invoiceNumber}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
                     pw.Spacer(),
                     pw.Text(_format.format(t.totalHT), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
                   ]
@@ -123,7 +103,6 @@ class ReportService {
             );
             rows.add(pw.SizedBox(height: 10));
           }
-
           return rows;
         },
         footer: (context) => pw.Column(
@@ -141,18 +120,83 @@ class ReportService {
         ),
       ),
     );
-
     await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
   }
 
-  static pw.Widget _headerCell(String text, double flex) {
-    return pw.Expanded(
-      flex: (flex * 10).toInt(),
-      child: pw.Container(
-        padding: const pw.EdgeInsets.all(5),
-        decoration: pw.BoxDecoration(border: pw.Border.all(width: 0.5)),
-        child: pw.Text(text, textAlign: pw.TextAlign.center, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
-      )
+  static Future<void> generateDailyPaymentsReport(List<Payment> payments, String type) async {
+    final pdf = pw.Document();
+    final now = DateTime.now();
+    final dateStr = DateFormat('dd/MM/yyyy').format(now);
+    pdf.addPage(
+      pw.MultiPage(
+        header: (context) => pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text('KO SOLAR ERP - RECAPITULATIF DES REGLEMENTS', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+            pw.Text(dateStr),
+          ],
+        ),
+        build: (pw.Context context) => [
+          pw.SizedBox(height: 20),
+          pw.Center(child: pw.Text('REGLEMENTS ${type.toUpperCase()}S DU JOUR', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold))),
+          pw.SizedBox(height: 20),
+          pw.TableHelper.fromTextArray(
+            headers: ['Date', 'Tiers', 'Reference', 'Mode', 'Journal', 'Montant'],
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+            data: payments.map((p) => [
+              DateFormat('dd/MM/yy').format(p.date),
+              p.tierName.toUpperCase(),
+              p.reference,
+              p.method,
+              p.journalCode ?? '',
+              _format.format(p.amount) + ' F',
+            ]).toList(),
+          ),
+          pw.SizedBox(height: 30),
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text('TOTAL : ${_format.format(payments.fold(0.0, (sum, p) => sum + p.amount))} FCFA',
+              style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+          ),
+        ],
+      ),
     );
+    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
+  }
+
+  static Future<void> generateDailyDeliveryReport(List<AppTransaction> txs) async {
+    final pdf = pw.Document();
+    final now = DateTime.now();
+    final dateStr = DateFormat('dd/MM/yyyy').format(now);
+
+    pdf.addPage(
+      pw.MultiPage(
+        header: (context) => pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text('KO SOLAR ERP - ETAT DES LIVRAISONS (BL)', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+            pw.Text(dateStr),
+          ],
+        ),
+        build: (pw.Context context) => [
+          pw.SizedBox(height: 20),
+          pw.Center(child: pw.Text('RAPPORT JOURNALIER DES LIVRAISONS', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold))),
+          pw.SizedBox(height: 20),
+          pw.TableHelper.fromTextArray(
+            headers: ['N° BL', 'Client', 'Destination', 'Statut'],
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+            data: txs.map((t) => [
+              'BL-${t.invoiceNumber}',
+              t.tierName.toUpperCase(),
+              t.destination,
+              t.deliveryStatus == 'delivered' ? 'LIVRÉ' : 'EN ATTENTE',
+            ]).toList(),
+          ),
+          pw.SizedBox(height: 30),
+          pw.Text('RÉSUMÉ : ${txs.where((t) => t.deliveryStatus == 'delivered').length} Livrés / ${txs.where((t) => t.deliveryStatus != 'delivered').length} En attente', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+        ],
+      ),
+    );
+    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
   }
 }

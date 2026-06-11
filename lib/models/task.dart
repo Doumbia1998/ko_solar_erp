@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum TaskStatus { pending, in_progress, completed, archived }
+enum TaskStatus { pending, in_progress, completed, approved, rejected }
 
 class Task {
   final String id;
@@ -15,11 +15,15 @@ class Task {
 
   // Rapport de chantier
   final String? reportDescription;
-  final List<Map<String, dynamic>>? usedProducts; // {productId, name, qty}
+  final List<Map<String, dynamic>>? usedProducts;
   final DateTime? completedAt;
   final String? siteLocation;
-  final String? gpsLocation; // Coordonnées format "lat,lng"
-  final String? sitePhotoUrl;
+  final String? gpsLocation;
+
+  // Approbation Responsable
+  final String? managerComment;
+  final String? approvedBy;
+  final DateTime? updatedAt;
 
   Task({
     required this.id,
@@ -36,7 +40,9 @@ class Task {
     this.completedAt,
     this.siteLocation,
     this.gpsLocation,
-    this.sitePhotoUrl,
+    this.managerComment,
+    this.approvedBy,
+    this.updatedAt,
   });
 
   Map<String, dynamic> toMap() {
@@ -54,7 +60,9 @@ class Task {
       'completedAt': completedAt != null ? Timestamp.fromDate(completedAt!) : null,
       'siteLocation': siteLocation,
       'gpsLocation': gpsLocation,
-      'sitePhotoUrl': sitePhotoUrl,
+      'managerComment': managerComment,
+      'approvedBy': approvedBy,
+      'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
     };
   }
 
@@ -77,7 +85,9 @@ class Task {
       completedAt: map['completedAt'] != null ? (map['completedAt'] as Timestamp).toDate() : null,
       siteLocation: map['siteLocation'],
       gpsLocation: map['gpsLocation'],
-      sitePhotoUrl: map['sitePhotoUrl'],
+      managerComment: map['managerComment'],
+      approvedBy: map['approvedBy'],
+      updatedAt: map['updatedAt'] != null ? (map['updatedAt'] as Timestamp).toDate() : null,
     );
   }
 }
