@@ -849,6 +849,111 @@ class PdfService {
     await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save(), name: 'Mouvements_Stock_${DateFormat('ddMMyy').format(DateTime.now())}.pdf');
   }
 
+  static Future<void> generateTransferBordereau(StockTransfer t) async {
+    final pdf = pw.Document();
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('KO SOLAR ERP', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text('BORDEREAU DE TRANSFERT', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16)),
+                      pw.Text('N° ${t.id.isEmpty ? "MT" + DateFormat('ddMMyy').format(t.date) : t.id.substring(0, 8).toUpperCase()}'),
+                    ],
+                  ),
+                ],
+              ),
+              pw.Divider(thickness: 2),
+              pw.SizedBox(height: 20),
+
+              pw.Container(
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(border: pw.Border.all(), color: PdfColors.grey100),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text('DÉPÔT SOURCE (DE) :', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
+                        pw.Text(t.fromWarehouseName.toUpperCase(), style: const pw.TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                    pw.Icon(const pw.IconData(0xe5c8), color: PdfColors.blue900, size: 30),
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.end,
+                      children: [
+                        pw.Text('DÉPÔT DESTINATION (VERS) :', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
+                        pw.Text(t.toWarehouseName.toUpperCase(), style: const pw.TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 30),
+
+              pw.Text('DÉTAIL DU TRANSFERT', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
+              pw.SizedBox(height: 10),
+              pw.TableHelper.fromTextArray(
+                headers: ['Désignation du Produit', 'ID Produit', 'Quantité transférée'],
+                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+                headerDecoration: const pw.BoxDecoration(color: PdfColors.blueGrey900),
+                data: [
+                  [t.productName.toUpperCase(), t.productId.substring(0, 8).toUpperCase(), t.quantity.toString()],
+                ],
+                cellAlignment: pw.Alignment.center,
+              ),
+
+              pw.SizedBox(height: 50),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    children: [
+                      pw.Text('Le Magasinier (Départ)', style: pw.TextStyle(decoration: pw.TextDecoration.underline)),
+                      pw.SizedBox(height: 50),
+                      pw.Text('........................'),
+                    ],
+                  ),
+                  pw.Column(
+                    children: [
+                      pw.Text('Le Transporteur', style: pw.TextStyle(decoration: pw.TextDecoration.underline)),
+                      pw.SizedBox(height: 50),
+                      pw.Text('........................'),
+                    ],
+                  ),
+                  pw.Column(
+                    children: [
+                      pw.Text('Réceptionnaire (Arrivée)', style: pw.TextStyle(decoration: pw.TextDecoration.underline)),
+                      pw.SizedBox(height: 50),
+                      pw.Text('........................'),
+                    ],
+                  ),
+                ],
+              ),
+              pw.Spacer(),
+              pw.Center(
+                child: pw.Text('Document généré par KO SOLAR ERP le ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
+                  style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save(), name: 'Bordereau_Transfert_${t.productId}.pdf');
+  }
+
   static Future<void> generateGlobalTransactionReport({
     required String type,
     required DateTime start,

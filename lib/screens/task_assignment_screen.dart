@@ -39,6 +39,10 @@ class _TaskAssignmentScreenState extends State<TaskAssignmentScreen> with Single
             Tab(text: 'À ASSIGNER'),
             Tab(text: 'SUIVI & APPROBATION'),
           ],
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          indicatorColor: Colors.yellow,
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
         ),
       ),
       body: TabBarView(

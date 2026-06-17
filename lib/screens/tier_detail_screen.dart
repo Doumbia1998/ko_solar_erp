@@ -46,15 +46,15 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
                   final myPays = snapshotPay.data!;
                   final myJournals = snapshotJournal.data!.where((j) => j.tierId == widget.tier.id).toList();
 
+                  // Le calcul de netToPay dans le modèle gère déjà le signe négatif pour les retours
                   double totalFacture = myTxs.fold(0.0, (sum, t) => sum + t.netToPay);
                   double totalRegle = 0;
 
                   // 1. Somme des règlements via le module
                   totalRegle += myPays.fold(0.0, (sum, p) => sum + p.amount);
 
-                  // 2. Somme des règlements via le journal (Compta) - Uniquement Crédit 411 ou Débit 401
+                  // 2. Somme des règlements via le journal (Compta)
                   for (var j in myJournals) {
-                    // On évite les doublons avec les acomptes des factures
                     bool isDuplicate = myPays.any((p) => p.invoiceNumber == j.reference || p.reference.contains(j.reference));
                     if (!isDuplicate) {
                       totalRegle += (widget.tier.type == TierType.client ? j.credit : j.debit);
@@ -63,7 +63,7 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
 
                   // 3. Acomptes orphelins (sécurité)
                   for (var t in myTxs) {
-                    if (t.amountPaid > 0) {
+                    if (t.amountPaid > 0 && t.type != TransactionType.saleReturn && t.type != TransactionType.purchaseReturn) {
                       bool counted = myPays.any((p) => p.invoiceNumber == t.invoiceNumber) ||
                                      myJournals.any((j) => j.reference == t.invoiceNumber);
                       if (!counted) totalRegle += t.amountPaid;
@@ -80,7 +80,7 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
                         color: Colors.blue.shade50,
                         child: Column(
                           children: [
-                            _buildSummaryRow('Total Facturé', totalFacture),
+                            _buildSummaryRow('Total Facturé (Net)', totalFacture),
                             _buildSummaryRow('Total Réglé', totalRegle, color: Colors.green),
                             const Divider(),
                             _buildSummaryRow('RESTE À PAYER', resteAPayer, isBold: true, color: resteAPayer > 10 ? Colors.red : Colors.green),
@@ -89,24 +89,35 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
                       ),
                       const Padding(
                         padding: EdgeInsets.all(16.0),
-                        child: Text('HISTORIQUE DES TRANSACTIONS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                        child: Text('HISTORIQUE DES OPÉRATIONS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12)),
                       ),
                       Expanded(
                         child: ListView.builder(
                           itemCount: myTxs.length,
                           itemBuilder: (context, index) {
                             final t = myTxs[index];
+                            final isReturn = t.type == TransactionType.saleReturn || t.type == TransactionType.purchaseReturn;
+
                             return Card(
                               margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                               child: ListTile(
-                                leading: Icon(t.type == TransactionType.sale ? Icons.arrow_upward : Icons.arrow_downward,
-                                             color: t.type == TransactionType.sale ? Colors.blue : Colors.green),
-                                title: Text('${t.invoiceNumber} du ${DateFormat('dd/MM/yy').format(t.date)}'),
-                                subtitle: Text('Total : ${_currencyFormat.format(t.netToPay)} F'),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
-                                  onPressed: () => PdfService.generateInvoice(t, allTierPayments: myPays, allTierTransactions: myTxs),
+                                leading: Icon(
+                                  isReturn ? Icons.assignment_return : (t.type == TransactionType.sale ? Icons.arrow_upward : Icons.arrow_downward),
+                                  color: isReturn ? Colors.red : (t.type == TransactionType.sale ? Colors.blue : Colors.green)
                                 ),
+                                title: Text('${isReturn ? "RETOUR" : (t.type == TransactionType.sale ? "VENTE" : "ACHAT")} ${t.invoiceNumber}'),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Date : ${DateFormat('dd/MM/yy').format(t.date)}'),
+                                    if (t.dueDate != null) Text('Échéance : ${DateFormat('dd/MM/yy').format(t.dueDate!)}', style: const TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                                trailing: Text(
+                                  '${isReturn ? "-" : ""}${_currencyFormat.format(t.netToPay.abs())} F',
+                                  style: TextStyle(fontWeight: FontWeight.bold, color: isReturn ? Colors.red : Colors.black)
+                                ),
+                                onTap: () => PdfService.generateInvoice(t, allTierPayments: myPays, allTierTransactions: myTxs),
                               ),
                             );
                           },
@@ -130,7 +141,7 @@ class _TierDetailScreenState extends State<TierDetailScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: TextStyle(fontWeight: isBold ? FontWeight.bold : FontWeight.normal, fontSize: isBold ? 16 : 14)),
-          Text('${_currencyFormat.format(value < 0 ? 0 : value)} FCFA',
+          Text('${_currencyFormat.format(value)} FCFA',
                style: TextStyle(fontWeight: FontWeight.bold, fontSize: isBold ? 20 : 14, color: color)),
         ],
       ),

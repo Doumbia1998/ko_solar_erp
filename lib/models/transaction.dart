@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum TransactionType { purchase, sale, quote }
+enum TransactionType { purchase, sale, quote, saleReturn, purchaseReturn }
 
 class TransactionItem {
   final String productId;
@@ -43,6 +43,7 @@ class AppTransaction {
   final String id;
   final String invoiceNumber;
   final DateTime date;
+  final DateTime? dueDate; // Date d'échéance pour les relances
   final String tierId; // Client or Supplier ID
   final String tierName;
   final TransactionType type;
@@ -54,7 +55,7 @@ class AppTransaction {
   final String destination; // Destination du produit
   final double transportFees;
   final bool addTransport; // true = ajouter, false = soustraire
-  final bool isPosted; // Nouveau : statut comptabilisation
+  final bool isPosted; // statut comptabilisation
   final String deliveryStatus; // 'pending', 'delivered'
   final String createdBy; // Nom de l'utilisateur
 
@@ -62,6 +63,7 @@ class AppTransaction {
     required this.id,
     required this.invoiceNumber,
     required this.date,
+    this.dueDate,
     required this.tierId,
     required this.tierName,
     required this.type,
@@ -78,7 +80,15 @@ class AppTransaction {
     this.createdBy = '',
   });
 
-  double get netToPay => addTransport ? (totalHT + transportFees) : (totalHT - transportFees);
+  double get netToPay {
+    double net = addTransport ? (totalHT + transportFees) : (totalHT - transportFees);
+    // Pour les retours, le montant net est négatif dans les calculs de solde
+    if (type == TransactionType.saleReturn || type == TransactionType.purchaseReturn) {
+      return -net;
+    }
+    return net;
+  }
+
   double get balance => netToPay - amountPaid;
 
   Map<String, dynamic> toMap() {
@@ -86,6 +96,7 @@ class AppTransaction {
       'id': id,
       'invoiceNumber': invoiceNumber,
       'date': Timestamp.fromDate(date),
+      'dueDate': dueDate != null ? Timestamp.fromDate(dueDate!) : null,
       'tierId': tierId,
       'tierName': tierName,
       'type': type.toString().split('.').last,
@@ -110,6 +121,10 @@ class AppTransaction {
       tType = TransactionType.sale;
     } else if (typeStr == 'quote') {
       tType = TransactionType.quote;
+    } else if (typeStr == 'saleReturn') {
+      tType = TransactionType.saleReturn;
+    } else if (typeStr == 'purchaseReturn') {
+      tType = TransactionType.purchaseReturn;
     } else {
       tType = TransactionType.purchase;
     }
@@ -118,6 +133,7 @@ class AppTransaction {
       id: id,
       invoiceNumber: map['invoiceNumber'] ?? '',
       date: (map['date'] as Timestamp).toDate(),
+      dueDate: map['dueDate'] != null ? (map['dueDate'] as Timestamp).toDate() : null,
       tierId: map['tierId'] ?? '',
       tierName: map['tierName'] ?? '',
       type: tType,

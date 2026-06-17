@@ -10,6 +10,7 @@ class StockTransfer {
   final String toWarehouseName;
   final int quantity;
   final DateTime date;
+  final String createdBy;
 
   StockTransfer({
     required this.id,
@@ -21,6 +22,7 @@ class StockTransfer {
     required this.toWarehouseName,
     required this.quantity,
     required this.date,
+    required this.createdBy,
   });
 
   Map<String, dynamic> toMap() {
@@ -33,6 +35,7 @@ class StockTransfer {
       'toWarehouseName': toWarehouseName,
       'quantity': quantity,
       'date': Timestamp.fromDate(date),
+      'createdBy': createdBy,
     };
   }
 
@@ -47,6 +50,7 @@ class StockTransfer {
       toWarehouseName: map['toWarehouseName'] ?? '',
       quantity: map['quantity'] ?? 0,
       date: (map['date'] as Timestamp).toDate(),
+      createdBy: map['createdBy'] ?? '',
     );
   }
 }

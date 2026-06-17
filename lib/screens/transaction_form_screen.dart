@@ -14,7 +14,8 @@ import 'stock_screen.dart';
 class TransactionFormScreen extends StatefulWidget {
   final TransactionType type;
   final AppTransaction? transaction;
-  const TransactionFormScreen({super.key, required this.type, this.transaction});
+  final bool isReturnMode;
+  const TransactionFormScreen({super.key, required this.type, this.transaction, this.isReturnMode = false});
 
   @override
   State<TransactionFormScreen> createState() => _TransactionFormScreenState();
@@ -31,6 +32,9 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
   bool _addTransport = true;
   late TextEditingController _amountPaidController;
   late TextEditingController _transportFeesController;
+  DateTime? _dueDate; // Nouvelle date d'échéance
+  bool _isReturn = false; // Mode retour
+
   final NumberFormat _currencyFormat = NumberFormat('#,###', 'fr_FR');
 
   @override
@@ -38,12 +42,16 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
     super.initState();
     _amountPaidController = TextEditingController(text: _formatInitialValue(widget.transaction?.amountPaid));
     _transportFeesController = TextEditingController(text: _formatInitialValue(widget.transaction?.transportFees));
+    _isReturn = widget.isReturnMode;
 
     if (widget.transaction != null) {
       _paymentMethod = widget.transaction!.paymentMethod;
       _addTransport = widget.transaction!.addTransport;
       _destination = widget.transaction!.destination;
       _items.addAll(widget.transaction!.items);
+      _dueDate = widget.transaction!.dueDate;
+      _isReturn = widget.transaction!.type == TransactionType.saleReturn ||
+                  widget.transaction!.type == TransactionType.purchaseReturn;
 
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         final service = Provider.of<FirestoreService>(context, listen: false);
@@ -267,6 +275,26 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
                           children: [
+                            if (widget.transaction == null && !isQuote)
+                              Row(
+                                children: [
+                                  const Icon(Icons.assignment_return, color: Colors.red),
+                                  const SizedBox(width: 10),
+                                  const Text("C'est un retour de marchandise ?", style: TextStyle(fontWeight: FontWeight.bold)),
+                                  const Spacer(),
+                                  Switch(
+                                    value: _isReturn,
+                                    activeColor: Colors.red,
+                                    onChanged: (val) => setState(() => _isReturn = val)
+                                  ),
+                                ],
+                              ),
+                            if (_isReturn)
+                              const Padding(
+                                padding: EdgeInsets.only(bottom: 10),
+                                child: Text("NOTE : Les quantités seront remises en stock et le solde client sera diminué.",
+                                  style: TextStyle(color: Colors.red, fontSize: 11, fontStyle: FontStyle.italic)),
+                              ),
                             ListTile(
                               leading: const CircleAvatar(child: Icon(Icons.person)),
                               title: Text(_selectedTier?.name ?? 'Choisir un ${(isSale || isQuote) ? "Client" : "Fournisseur"}', style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -277,17 +305,43 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                               } : null,
                             ),
                             const Divider(),
-                            StreamBuilder<List<Warehouse>>(
-                              stream: firestoreService.getWarehouses(),
-                              builder: (context, snapshot) {
-                                final warehouses = snapshot.data ?? [];
-                                return DropdownButtonFormField<Warehouse>(
-                                  value: _selectedWarehouse,
-                                  decoration: const InputDecoration(prefixIcon: Icon(Icons.warehouse), labelText: 'Dépôt de stockage', border: InputBorder.none),
-                                  items: warehouses.map((w) => DropdownMenuItem(value: w, child: Text(w.name))).toList(),
-                                  onChanged: isEditable ? (val) => setState(() => _selectedWarehouse = val) : null,
-                                );
-                              },
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: StreamBuilder<List<Warehouse>>(
+                                    stream: firestoreService.getWarehouses(),
+                                    builder: (context, snapshot) {
+                                      final warehouses = snapshot.data ?? [];
+                                      return DropdownButtonFormField<Warehouse>(
+                                        value: _selectedWarehouse,
+                                        decoration: const InputDecoration(prefixIcon: Icon(Icons.warehouse), labelText: 'Dépôt', border: InputBorder.none),
+                                        items: warehouses.map((w) => DropdownMenuItem(value: w, child: Text(w.name))).toList(),
+                                        onChanged: isEditable ? (val) => setState(() => _selectedWarehouse = val) : null,
+                                      );
+                                    },
+                                  ),
+                                ),
+                                if (!isQuote && !_isReturn) ...[
+                                  const VerticalDivider(),
+                                  Expanded(
+                                    child: InkWell(
+                                      onTap: isEditable ? () async {
+                                        final picked = await showDatePicker(
+                                          context: context,
+                                          initialDate: _dueDate ?? DateTime.now().add(const Duration(days: 30)),
+                                          firstDate: DateTime.now(),
+                                          lastDate: DateTime(2100)
+                                        );
+                                        if (picked != null) setState(() => _dueDate = picked);
+                                      } : null,
+                                      child: InputDecorator(
+                                        decoration: const InputDecoration(labelText: "Échéance", border: InputBorder.none, prefixIcon: Icon(Icons.event_available, color: Colors.red)),
+                                        child: Text(_dueDate == null ? "Non définie" : DateFormat('dd/MM/yy').format(_dueDate!)),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                             const Divider(),
                             TextFormField(
@@ -548,17 +602,24 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                             String prefix = 'FA';
                             if (widget.type == TransactionType.quote) prefix = 'DEV';
                             if (widget.type == TransactionType.purchase) prefix = 'ACH';
+                            if (_isReturn) prefix = 'RET';
+
+                            TransactionType finalType = widget.type;
+                            if (_isReturn) {
+                              finalType = widget.type == TransactionType.sale ? TransactionType.saleReturn : TransactionType.purchaseReturn;
+                            }
 
                             final tx = AppTransaction(
                               id: widget.transaction?.id ?? '',
                               invoiceNumber: widget.transaction?.invoiceNumber ?? '$prefix${DateFormat('ddMMyyHHmm').format(DateTime.now())}',
                               date: widget.transaction?.date ?? DateTime.now(),
+                              dueDate: _dueDate,
                               tierId: _selectedTier!.id,
                               tierName: _selectedTier!.name,
-                              type: widget.type,
+                              type: finalType,
                               items: List.from(_items),
                               totalHT: _totalHT,
-                              amountPaid: isQuote ? 0 : (double.tryParse(_amountPaidController.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0),
+                              amountPaid: (isQuote || _isReturn) ? 0 : (double.tryParse(_amountPaidController.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0),
                               paymentMethod: _paymentMethod,
                               warehouseId: _selectedWarehouse!.id,
                               destination: _destination,

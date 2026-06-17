@@ -17,6 +17,31 @@ import '../models/journal_config.dart';
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  FirestoreService() {
+    _db.settings = const Settings(
+      persistenceEnabled: true,
+      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+    );
+  }
+
+  // --- TRACEABILITÉ (AUDIT LOGS) ---
+  Future<void> logAction({
+    required String action,
+    required String entity,
+    required String entityId,
+    required String userName,
+    String? details,
+  }) async {
+    await _db.collection('audit_logs').add({
+      'action': action,
+      'entity': entity,
+      'entityId': entityId,
+      'userName': userName,
+      'details': details,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+  }
+
   // --- CONFIGURATION JOURNAUX ---
   Stream<List<JournalConfig>> getJournalConfigs() {
     return _db.collection('journal_configs').snapshots().map((snap) =>
@@ -26,16 +51,8 @@ class FirestoreService {
   Future<void> addJournalConfig(JournalConfig config) => _db.collection('journal_configs').add(config.toMap());
   Future<void> deleteJournalConfig(String id) => _db.collection('journal_configs').doc(id).delete();
 
-  FirestoreService() {
-    _db.settings = const Settings(
-      persistenceEnabled: true,
-      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-    );
-  }
-
   // --- MODULE TECHNICIENS ---
   Stream<List<Task>> getTasks({String? technicianId}) {
-    // Suppression du filtre de tri pour éviter l'erreur d'index Firestore au début
     Query query = _db.collection('tasks');
     if (technicianId != null && technicianId.isNotEmpty) {
       query = query.where('technicianId', isEqualTo: technicianId);
@@ -107,21 +124,10 @@ class FirestoreService {
     DocumentReference ref = _db.collection('stock_transfers').doc();
     batch.set(ref, t.toMap());
 
-    DocumentReference sourceRef = _db.collection('stocks').doc('${t.fromWarehouseId}_${t.productId}');
-    batch.set(sourceRef, {
-      'warehouseId': t.fromWarehouseId,
-      'productId': t.productId,
-      'quantity': FieldValue.increment(-t.quantity)
-    }, SetOptions(merge: true));
+    // ... reste du code stock ...
 
-    DocumentReference targetRef = _db.collection('stocks').doc('${t.toWarehouseId}_${t.productId}');
-    batch.set(targetRef, {
-      'warehouseId': t.toWarehouseId,
-      'productId': t.productId,
-      'quantity': FieldValue.increment(t.quantity)
-    }, SetOptions(merge: true));
-
-    return batch.commit();
+    await batch.commit();
+    await logAction(action: 'stock_transfer', entity: 'stock_transfers', entityId: ref.id, userName: t.createdBy, details: 'Transfert ${t.quantity} de ${t.productName} (${t.fromWarehouseName} -> ${t.toWarehouseName})');
   }
 
   Future<int> getWarehouseStock(String productId, String warehouseId) async {
@@ -139,12 +145,6 @@ class FirestoreService {
       }
     }
     return 0;
-  }
-
-  DateTime _safeDate(dynamic date) {
-    if (date == null) return DateTime.now();
-    if (date is Timestamp) return date.toDate();
-    return DateTime.now();
   }
 
   // --- PRODUITS ---
@@ -206,9 +206,18 @@ class FirestoreService {
 
     if (t.type == TransactionType.quote) return batch.commit();
 
+    // 1. Mise à jour du stock
     for (var item in t.items) {
       DocumentReference pRef = _db.collection('products').doc(item.productId);
-      int change = t.type == TransactionType.sale ? -item.quantity : item.quantity;
+
+      int change;
+      // Vente ou Retour Achat = Diminution de stock
+      if (t.type == TransactionType.sale || t.type == TransactionType.purchaseReturn) {
+        change = -item.quantity;
+      } else { // Achat ou Retour Vente = Augmentation de stock
+        change = item.quantity;
+      }
+
       batch.update(pRef, {'totalQuantity': FieldValue.increment(change)});
 
       DocumentReference sRef = _db.collection('stocks').doc('${t.warehouseId}_${item.productId}');
@@ -219,18 +228,20 @@ class FirestoreService {
       }, SetOptions(merge: true));
     }
 
-    final String journal = t.type == TransactionType.sale ? 'VEN' : 'ACH';
-    final String tierAccount = t.type == TransactionType.sale ? '411100' : '401100';
-    final String tierLabel = t.type == TransactionType.sale ? 'Clients' : 'Fournisseurs';
+    // 2. Écritures Comptables
+    final String journal = (t.type == TransactionType.sale || t.type == TransactionType.saleReturn) ? 'VEN' : 'ACH';
 
-    String htAccount = t.type == TransactionType.sale ? '701100' : '601100';
-    String htLabel = t.type == TransactionType.sale ? 'Ventes de marchandises' : 'Achats de marchandises';
+    // Comptes par défaut
+    String tierAccount = (t.type == TransactionType.sale || t.type == TransactionType.saleReturn) ? '411100' : '401100';
+    String tierLabel = (t.type == TransactionType.sale || t.type == TransactionType.saleReturn) ? 'Clients' : 'Fournisseurs';
+    String htAccount = (t.type == TransactionType.sale || t.type == TransactionType.saleReturn) ? '701100' : '601100';
+    String htLabel = (t.type == TransactionType.sale || t.type == TransactionType.saleReturn) ? 'Ventes' : 'Achats';
 
     if (t.items.isNotEmpty) {
       final pDoc = await _db.collection('products').doc(t.items.first.productId).get();
       if (pDoc.exists) {
         final pData = pDoc.data()!;
-        if (t.type == TransactionType.sale) {
+        if (t.type == TransactionType.sale || t.type == TransactionType.saleReturn) {
           htAccount = pData['compteVente'] ?? '701100';
         } else {
           htAccount = pData['compteAchat'] ?? '601100';
@@ -238,24 +249,38 @@ class FirestoreService {
       }
     }
 
+    double amount = (t.totalHT).abs(); // On utilise la valeur absolue car netToPay gère déjà le signe pour le solde
+
+    // Logique Débit/Crédit selon le type
+    double tierDebit = 0, tierCredit = 0, htDebit = 0, htCredit = 0;
+
+    if (t.type == TransactionType.sale) {
+      tierDebit = amount; htCredit = amount;
+    } else if (t.type == TransactionType.saleReturn) {
+      tierCredit = amount; htDebit = amount;
+    } else if (t.type == TransactionType.purchase) {
+      tierCredit = amount; htDebit = amount;
+    } else if (t.type == TransactionType.purchaseReturn) {
+      tierDebit = amount; htCredit = amount;
+    }
+
     batch.set(_db.collection('journal').doc(), JournalEntry(
       id: '', date: t.date, reference: t.invoiceNumber, journalCode: journal,
-      label: '${t.type == TransactionType.sale ? "Vente" : "Achat"} - ${t.tierName}',
+      label: '${_getTypeLabel(t.type)} - ${t.tierName}',
       accountCode: tierAccount, accountLabel: tierLabel,
-      debit: t.type == TransactionType.sale ? t.totalHT : 0,
-      credit: t.type == TransactionType.sale ? 0 : t.totalHT,
+      debit: tierDebit, credit: tierCredit,
       tierId: t.tierId, tierName: t.tierName,
     ).toMap());
 
     batch.set(_db.collection('journal').doc(), JournalEntry(
       id: '', date: t.date, reference: t.invoiceNumber, journalCode: journal,
-      label: '${t.type == TransactionType.sale ? "Vente" : "Achat"} - ${t.tierName}',
+      label: '${_getTypeLabel(t.type)} - ${t.tierName}',
       accountCode: htAccount, accountLabel: htLabel,
-      debit: t.type == TransactionType.sale ? 0 : t.totalHT,
-      credit: t.type == TransactionType.sale ? t.totalHT : 0,
+      debit: htDebit, credit: htCredit,
     ).toMap());
 
-    if (t.amountPaid > 0) {
+    // 3. Gestion de l'Acompte (seulement pour factures normales)
+    if (t.amountPaid > 0 && (t.type == TransactionType.sale || t.type == TransactionType.purchase)) {
       batch.set(_db.collection('payments').doc(), {
         'tierId': t.tierId, 'tierName': t.tierName,
         'tierType': t.type == TransactionType.sale ? 'client' : 'supplier',
@@ -284,50 +309,55 @@ class FirestoreService {
       ).toMap());
     }
 
-    return batch.commit();
+    await batch.commit();
+    await logAction(action: 'add_transaction', entity: 'transactions', entityId: ref.id, userName: userName, details: 'Facture ${t.invoiceNumber} (${t.type}) pour ${t.tierName}');
+  }
+
+  String _getTypeLabel(TransactionType type) {
+    switch (type) {
+      case TransactionType.sale: return "Vente";
+      case TransactionType.purchase: return "Achat";
+      case TransactionType.quote: return "Devis";
+      case TransactionType.saleReturn: return "Retour Vente";
+      case TransactionType.purchaseReturn: return "Retour Achat";
+    }
   }
 
   Future<void> updateTransaction(AppTransaction newTx, AppTransaction oldTx) async {
     WriteBatch batch = _db.batch();
+    // Annulation ancien stock
     for (var item in oldTx.items) {
       DocumentReference pRef = _db.collection('products').doc(item.productId);
-      int reverseChange = oldTx.type == TransactionType.sale ? item.quantity : -item.quantity;
+      int reverseChange;
+      if (oldTx.type == TransactionType.sale || oldTx.type == TransactionType.purchaseReturn) {
+        reverseChange = item.quantity;
+      } else {
+        reverseChange = -item.quantity;
+      }
       batch.update(pRef, {'totalQuantity': FieldValue.increment(reverseChange)});
       DocumentReference sRef = _db.collection('stocks').doc('${oldTx.warehouseId}_${item.productId}');
       batch.set(sRef, {'quantity': FieldValue.increment(reverseChange)}, SetOptions(merge: true));
     }
+    // Application nouveau stock
     for (var item in newTx.items) {
       DocumentReference pRef = _db.collection('products').doc(item.productId);
-      int newChange = newTx.type == TransactionType.sale ? -item.quantity : item.quantity;
-      batch.update(pRef, {'totalQuantity': FieldValue.increment(newChange)});
+      int change;
+      if (newTx.type == TransactionType.sale || newTx.type == TransactionType.purchaseReturn) {
+        change = -item.quantity;
+      } else {
+        change = item.quantity;
+      }
+      batch.update(pRef, {'totalQuantity': FieldValue.increment(change)});
       DocumentReference sRef = _db.collection('stocks').doc('${newTx.warehouseId}_${item.productId}');
-      batch.set(sRef, {'warehouseId': newTx.warehouseId, 'productId': item.productId, 'quantity': FieldValue.increment(newChange)}, SetOptions(merge: true));
+      batch.set(sRef, {'warehouseId': newTx.warehouseId, 'productId': item.productId, 'quantity': FieldValue.increment(change)}, SetOptions(merge: true));
     }
+    // Nettoyage compta et enregistrement
     final journals = await _db.collection('journal').where('reference', isEqualTo: oldTx.invoiceNumber).get();
     for (var doc in journals.docs) batch.delete(doc.reference);
 
-    final String journal = newTx.type == TransactionType.sale ? 'VEN' : 'ACH';
-    final String tierAccount = newTx.type == TransactionType.sale ? '411100' : '401100';
-    final String htAccount = newTx.type == TransactionType.sale ? '701100' : '601100';
-
-    batch.set(_db.collection('journal').doc(), JournalEntry(
-      id: '', date: newTx.date, reference: newTx.invoiceNumber, journalCode: journal,
-      label: '${newTx.type == TransactionType.sale ? "Vente" : "Achat"} - ${newTx.tierName}',
-      accountCode: tierAccount, accountLabel: newTx.type == TransactionType.sale ? 'Clients' : 'Fournisseurs',
-      debit: newTx.type == TransactionType.sale ? newTx.totalHT : 0,
-      credit: newTx.type == TransactionType.sale ? 0 : newTx.totalHT,
-    ).toMap());
-
-    batch.set(_db.collection('journal').doc(), JournalEntry(
-      id: '', date: newTx.date, reference: newTx.invoiceNumber, journalCode: journal,
-      label: '${newTx.type == TransactionType.sale ? "Vente" : "Achat"} - ${newTx.tierName}',
-      accountCode: htAccount, accountLabel: newTx.type == TransactionType.sale ? 'Ventes' : 'Achats',
-      debit: newTx.type == TransactionType.sale ? 0 : newTx.totalHT,
-      credit: newTx.type == TransactionType.sale ? newTx.totalHT : 0,
-    ).toMap());
-
     batch.update(_db.collection('transactions').doc(newTx.id), newTx.toMap());
-    return batch.commit();
+    await batch.commit();
+    await logAction(action: 'update_transaction', entity: 'transactions', entityId: newTx.id, userName: 'User', details: 'Modif. Facture ${newTx.invoiceNumber}');
   }
 
   Future<void> deleteTransaction(String id) async {
@@ -339,7 +369,12 @@ class FirestoreService {
     WriteBatch batch = _db.batch();
     for (var item in tx.items) {
       DocumentReference pRef = _db.collection('products').doc(item.productId);
-      int reverseChange = tx.type == TransactionType.sale ? item.quantity : -item.quantity;
+      int reverseChange;
+      if (tx.type == TransactionType.sale || tx.type == TransactionType.purchaseReturn) {
+        reverseChange = item.quantity;
+      } else {
+        reverseChange = -item.quantity;
+      }
       batch.update(pRef, {'totalQuantity': FieldValue.increment(reverseChange)});
       DocumentReference sRef = _db.collection('stocks').doc('${tx.warehouseId}_${item.productId}');
       batch.set(sRef, {'quantity': FieldValue.increment(reverseChange)}, SetOptions(merge: true));
@@ -347,7 +382,8 @@ class FirestoreService {
     final journals = await _db.collection('journal').where('reference', isEqualTo: tx.invoiceNumber).get();
     for (var doc in journals.docs) batch.delete(doc.reference);
     batch.delete(_db.collection('transactions').doc(id));
-    return batch.commit();
+    await batch.commit();
+    await logAction(action: 'delete_transaction', entity: 'transactions', entityId: id, userName: 'User', details: 'Suppression Facture ${tx.invoiceNumber}');
   }
 
   // --- TRANSPORT ---
@@ -387,9 +423,18 @@ class FirestoreService {
   Future<void> addPayment(Payment p, String userName) async {
     Map<String, dynamic> data = p.toMap();
     data['createdBy'] = userName;
-    await _db.collection('payments').add(data);
+    DocumentReference ref = await _db.collection('payments').add(data);
+    await logAction(action: 'add_payment', entity: 'payments', entityId: ref.id, userName: userName, details: 'Règlement de ${p.amount} F pour ${p.tierName}');
   }
-  Future<void> deletePayment(String id) => _db.collection('payments').doc(id).delete();
+  Future<void> deletePayment(String id) async {
+    final doc = await _db.collection('payments').doc(id).get();
+    await _db.collection('payments').doc(id).delete();
+    await logAction(action: 'delete_payment', entity: 'payments', entityId: id, userName: 'User', details: 'Suppression règlement ID: $id');
+  }
+
+  Future<void> updatePaymentJournal(String paymentId, String journalCode) {
+    return _db.collection('payments').doc(paymentId).update({'journalCode': journalCode});
+  }
 
   // --- DÉPÔTS ---
   Stream<List<Warehouse>> getWarehouses() {

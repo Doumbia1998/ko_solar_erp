@@ -123,30 +123,52 @@ class ReportService {
     await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
   }
 
-  static Future<void> generateDailyPaymentsReport(List<Payment> payments, String type) async {
+  static Future<void> generateDailyPaymentsReport(List<Payment> payments, String type, {String? tierName, DateTime? start, DateTime? end}) async {
     final pdf = pw.Document();
     final now = DateTime.now();
     final dateStr = DateFormat('dd/MM/yyyy').format(now);
+
+    String period = "Période : ";
+    if (start != null && end != null) {
+      period += "${DateFormat('dd/MM/yy').format(start)} au ${DateFormat('dd/MM/yy').format(end)}";
+    } else {
+      period += dateStr;
+    }
+
     pdf.addPage(
       pw.MultiPage(
-        header: (context) => pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        header: (context) => pw.Column(
           children: [
-            pw.Text('KO SOLAR ERP - RECAPITULATIF DES REGLEMENTS', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-            pw.Text(dateStr),
-          ],
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text('KO SOLAR ERP', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
+                pw.Text(period, style: const pw.TextStyle(fontSize: 10)),
+              ],
+            ),
+            pw.Divider(),
+            pw.SizedBox(height: 10),
+            pw.Center(
+              child: pw.Text(
+                tierName != null
+                  ? 'HISTORIQUE DES RÈGLEMENTS : ${tierName.toUpperCase()}'
+                  : 'RÉCAPITULATIF GLOBAL DES RÈGLEMENTS ${type.toUpperCase()}S',
+                style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)
+              )
+            ),
+            pw.SizedBox(height: 20),
+          ]
         ),
         build: (pw.Context context) => [
-          pw.SizedBox(height: 20),
-          pw.Center(child: pw.Text('REGLEMENTS ${type.toUpperCase()}S DU JOUR', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold))),
-          pw.SizedBox(height: 20),
           pw.TableHelper.fromTextArray(
-            headers: ['Date', 'Tiers', 'Reference', 'Mode', 'Journal', 'Montant'],
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+            headers: ['Date', 'Tiers', 'Référence / Facture', 'Mode', 'Journal', 'Montant'],
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.blueGrey900),
+            cellAlignment: pw.Alignment.center,
             data: payments.map((p) => [
               DateFormat('dd/MM/yy').format(p.date),
               p.tierName.toUpperCase(),
-              p.reference,
+              p.invoiceNumber != null ? 'ENC FA${p.invoiceNumber}' : p.reference,
               p.method,
               p.journalCode ?? '',
               _format.format(p.amount) + ' F',
@@ -155,8 +177,12 @@ class ReportService {
           pw.SizedBox(height: 30),
           pw.Align(
             alignment: pw.Alignment.centerRight,
-            child: pw.Text('TOTAL : ${_format.format(payments.fold(0.0, (sum, p) => sum + p.amount))} FCFA',
-              style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+            child: pw.Container(
+              padding: const pw.EdgeInsets.all(10),
+              decoration: pw.BoxDecoration(border: pw.Border.all(), color: PdfColors.grey100),
+              child: pw.Text('TOTAL : ${_format.format(payments.fold(0.0, (sum, p) => sum + p.amount))} FCFA',
+                style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+            ),
           ),
         ],
       ),

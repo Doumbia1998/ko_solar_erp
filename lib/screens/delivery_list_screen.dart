@@ -45,6 +45,10 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> with SingleTick
             Tab(text: 'À LIVRER (EN ATTENTE)'),
             Tab(text: 'DÉJÀ LIVRÉ (ARCHIVES)'),
           ],
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          indicatorColor: Colors.orangeAccent,
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
         ),
       ),
       body: Column(

@@ -29,6 +29,9 @@ import 'task_assignment_screen.dart';
 import 'technician_task_screen.dart';
 import '../models/task.dart';
 import 'weather_alert_screen.dart';
+import 'unpaid_reminder_screen.dart';
+import 'stock_transfer_screen.dart';
+import 'audit_logs_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -83,12 +86,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         const DashboardContent(),
         const TransactionListScreen(type: TransactionType.purchase),
         const TransactionListScreen(type: TransactionType.sale),
+        StockTransferScreen(),
         const TransportScreen(),
       ];
       navItems = [
         const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Accueil'),
         if (canViewPurchases) const BottomNavigationBarItem(icon: Icon(Icons.shopping_cart), label: 'Achats'),
         if (canViewSales) const BottomNavigationBarItem(icon: Icon(Icons.sell), label: 'Ventes'),
+        const BottomNavigationBarItem(icon: Icon(Icons.swap_horiz), label: 'Transferts'),
         if (canViewTransport) const BottomNavigationBarItem(icon: Icon(Icons.local_shipping), label: 'Transport'),
       ];
     }
@@ -124,8 +129,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             _buildDrawerTile(context, Icons.request_quote, 'Devis', Colors.purple, const TransactionListScreen(type: TransactionType.quote)),
             _buildDrawerTile(context, Icons.local_shipping, 'Livraisons (BL)', Colors.orange, const DeliveryListScreen()),
             _buildDrawerTile(context, Icons.assignment, 'Gestion des Chantiers', Colors.deepOrange, const TaskAssignmentScreen()),
+            _buildDrawerTile(context, Icons.warning_amber, 'Relance des Impayés', Colors.red, const UnpaidReminderScreen()),
+            _buildDrawerTile(context, Icons.cloud, 'Avertissement Météo', Colors.orange, const WeatherAlertScreen()),
             _buildDrawerTile(context, Icons.warehouse, 'Gestion des Dépôts', Colors.brown, const WarehouseListScreen()),
-            _buildDrawerTile(context, Icons.warning_amber, 'Avertissement Météo', Colors.orange, const WeatherAlertScreen()),
             const Divider(),
             _buildDrawerTile(context, Icons.payments, 'Règlements', Colors.green, const PaymentScreen()),
             _buildDrawerTile(context, Icons.money_off, 'État des Impayés', Colors.red, const UnpaidReportScreen()),
@@ -144,6 +150,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             if (canManageUsers) ...[
               const Divider(),
               _buildDrawerTile(context, Icons.analytics, 'Statistiques & Marges', Colors.orange, const StatisticsScreen()),
+              _buildDrawerTile(context, Icons.security, 'Audit & Traçabilité', Colors.blueGrey, const AuditLogsScreen()),
               _buildDrawerTile(context, Icons.admin_panel_settings, 'Gestion Utilisateurs', Colors.red, const UserManagementScreen()),
             ],
           ],
@@ -257,21 +264,26 @@ class DashboardContent extends StatelessWidget {
                 final trips = snapshotTrips.data ?? [];
                 final payments = snapshotPay.data ?? [];
 
-                final sales = transactions.where((t) => t.type == TransactionType.sale).toList();
-                double caSales = sales.fold(0.0, (sum, t) => sum + t.netToPay);
-                double paidInitialSales = sales.fold(0.0, (sum, t) => sum + t.amountPaid);
+                // --- CALCULS CLIENTS (VENTES & RETOURS) ---
+                final salesAndReturns = transactions.where((t) => t.type == TransactionType.sale || t.type == TransactionType.saleReturn).toList();
+                double caSales = salesAndReturns.fold(0.0, (sum, t) => sum + t.netToPay);
+                double paidInitialSales = salesAndReturns.fold(0.0, (sum, t) => sum + t.amountPaid);
                 double reglementsSales = payments.where((p) => p.tierType == TierType.client).fold(0.0, (sum, p) => sum + p.amount);
                 double totalEncaisseSales = paidInitialSales + reglementsSales;
                 double totalImpayesSales = caSales - totalEncaisseSales;
 
-                final purchases = transactions.where((t) => t.type == TransactionType.purchase).toList();
-                double caPurchases = purchases.fold(0.0, (sum, t) => sum + t.netToPay);
-                double paidInitialPurchases = purchases.fold(0.0, (sum, t) => sum + t.amountPaid);
+                // --- CALCULS FOURNISSEURS (ACHATS & RETOURS) ---
+                final purchasesAndReturns = transactions.where((t) => t.type == TransactionType.purchase || t.type == TransactionType.purchaseReturn).toList();
+                double caPurchases = purchasesAndReturns.fold(0.0, (sum, t) => sum + t.netToPay);
+                double paidInitialPurchases = purchasesAndReturns.fold(0.0, (sum, t) => sum + t.amountPaid);
                 double reglementsPurchases = payments.where((p) => p.tierType == TierType.supplier).fold(0.0, (sum, p) => sum + p.amount);
                 double totalPayePurchases = paidInitialPurchases + reglementsPurchases;
                 double totalImpayesPurchases = caPurchases - totalPayePurchases;
 
+                // --- TRANSPORT ---
                 double beneficeTrans = trips.fold(0.0, (sum, t) => sum + t.netProfit);
+
+                // --- TRÉSORERIE ---
                 double soldeCaisse = reglementsSales - reglementsPurchases;
 
                 return Center(
