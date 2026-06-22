@@ -39,6 +39,11 @@ import 'import_export_screen.dart';
 import 'fiscal_year_screen.dart';
 import 'trial_balance_screen.dart';
 
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../models/advance.dart';
+import 'aged_balance_screen.dart';
+
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -182,6 +187,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               _buildDrawerTile(context, Icons.account_balance, 'Plan Comptable', Colors.indigo, const AccountListScreen()),
               _buildDrawerTile(context, Icons.menu_book, 'Journal Comptable', Colors.brown, const JournalScreen()),
               _buildDrawerTile(context, Icons.receipt_long, 'Balance des Comptes', Colors.teal, const TrialBalanceScreen()),
+              _buildDrawerTile(context, Icons.history, 'Balance Agée Clients', Colors.orange, const AgedBalanceScreen()),
               _buildDrawerTile(context, Icons.date_range, 'Exercices Comptables', Colors.blueAccent, const FiscalYearScreen()),
               _buildDrawerTile(context, Icons.account_balance_wallet, 'Rapprochement Bancaire', Colors.green, const ReconciliationScreen()),
             ],
@@ -274,6 +280,73 @@ class TechManagerDashboard extends StatelessWidget {
   }
 }
 
+class WeatherWidget extends StatefulWidget {
+  const WeatherWidget({super.key});
+
+  @override
+  State<WeatherWidget> createState() => _WeatherWidgetState();
+}
+
+class _WeatherWidgetState extends State<WeatherWidget> {
+  String _temp = "--";
+  String _desc = "Chargement...";
+  bool _error = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchWeather();
+  }
+
+  Future<void> _fetchWeather() async {
+    try {
+      final response = await http.get(Uri.parse('https://wttr.in/Bamako?format=j1'));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final current = data['current_condition'][0];
+        setState(() {
+          _temp = "${current['temp_C']}°C";
+          _desc = current['lang_fr']?[0]['value'] ?? current['weatherDesc'][0]['value'];
+          _error = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = true;
+        _desc = "Météo indisponible";
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.wb_sunny, color: Colors.orange, size: 30),
+          const SizedBox(width: 15),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('BAMAKO, MALI', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey.shade600)),
+              Text(_temp, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Text(_desc, style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class DashboardContent extends StatelessWidget {
   const DashboardContent({super.key});
 
@@ -289,9 +362,10 @@ class DashboardContent extends StatelessWidget {
     final canViewSales = isAdmin || currentUser.canViewSales;
     final canViewPurchases = isAdmin || currentUser.canViewPurchases;
     final canViewTransport = isAdmin || currentUser.canViewTransport;
+    final canViewAdvances = isAdmin || currentUser.canViewAdvances;
 
     return StreamBuilder<List<AppTransaction>>(
-      stream: firestoreService.getTransactions(limit: 50), // On limite a 50 pour la fluidite du tableau de bord
+      stream: firestoreService.getTransactions(limit: 50),
       builder: (context, snapshotTrans) {
         return StreamBuilder<List<Trip>>(
           stream: firestoreService.getTrips(),
@@ -299,162 +373,188 @@ class DashboardContent extends StatelessWidget {
             return StreamBuilder<List<Payment>>(
               stream: firestoreService.getPayments(),
               builder: (context, snapshotPay) {
-                final transactions = snapshotTrans.data ?? [];
-                final trips = snapshotTrips.data ?? [];
-                final payments = snapshotPay.data ?? [];
+                return StreamBuilder<List<Advance>>(
+                  stream: firestoreService.getAdvances(),
+                  builder: (context, snapshotAdv) {
+                    final transactions = snapshotTrans.data ?? [];
+                    final trips = snapshotTrips.data ?? [];
+                    final payments = snapshotPay.data ?? [];
+                    final advances = snapshotAdv.data ?? [];
 
-                // On évite les calculs lourds si on n'a pas encore de données
-                if (snapshotTrans.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+                    if (snapshotTrans.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
 
-                // --- CALCULS CLIENTS (VENTES & RETOURS) ---
-                final salesAndReturns = transactions.where((t) => t.type == TransactionType.sale || t.type == TransactionType.saleReturn).toList();
-                double caSales = salesAndReturns.fold(0.0, (sum, t) => sum + t.netToPay);
+                    // --- CALCULS AVANCES ---
+                    double totalAvancesDispo = advances.where((a) => !a.isUsed).fold(0.0, (sum, a) => sum + a.amount);
 
-                // On récupère tout l'argent encaissé via les règlements (qui incluent déjà les acomptes créés à la facturation)
-                double totalEncaisseSales = payments.where((p) => p.tierType == TierType.client).fold(0.0, (sum, p) => sum + p.amount);
+                    // --- CALCULS CLIENTS (VENTES & RETOURS) ---
+                    final salesAndReturns = transactions.where((t) => t.type == TransactionType.sale || t.type == TransactionType.saleReturn).toList();
+                    double caSales = salesAndReturns.fold(0.0, (sum, t) => sum + t.netToPay);
+                    double totalEncaisseSales = payments.where((p) => p.tierType == TierType.client).fold(0.0, (sum, p) => sum + p.amount);
 
-                // Pour la sécurité, on vérifie s'il y a des acomptes sur factures qui n'ont pas encore de doc "payment" associé
-                for (var t in salesAndReturns) {
-                  if (t.amountPaid > 0 && t.type == TransactionType.sale) {
-                    bool alreadyCounted = payments.any((p) => p.invoiceNumber == t.invoiceNumber && p.reference.contains('Acompte'));
-                    if (!alreadyCounted) totalEncaisseSales += t.amountPaid;
-                  }
-                }
+                    for (var t in salesAndReturns) {
+                      if (t.amountPaid > 0 && t.type == TransactionType.sale) {
+                        bool alreadyCounted = payments.any((p) => p.invoiceNumber == t.invoiceNumber && p.reference.contains('Acompte'));
+                        if (!alreadyCounted) totalEncaisseSales += t.amountPaid;
+                      }
+                    }
+                    double totalImpayesSales = caSales - totalEncaisseSales;
 
-                double totalImpayesSales = caSales - totalEncaisseSales;
+                    // --- CALCULS FOURNISSEURS ---
+                    final purchasesAndReturns = transactions.where((t) => t.type == TransactionType.purchase || t.type == TransactionType.purchaseReturn).toList();
+                    double caPurchases = purchasesAndReturns.fold(0.0, (sum, t) => sum + t.netToPay);
+                    double totalPayePurchases = payments.where((p) => p.tierType == TierType.supplier).fold(0.0, (sum, p) => sum + p.amount);
+                    for (var t in purchasesAndReturns) {
+                      if (t.amountPaid > 0 && t.type == TransactionType.purchase) {
+                        bool alreadyCounted = payments.any((p) => p.invoiceNumber == t.invoiceNumber && p.reference.contains('Acompte'));
+                        if (!alreadyCounted) totalPayePurchases += t.amountPaid;
+                      }
+                    }
+                    double totalImpayesPurchases = caPurchases - totalPayePurchases;
 
-                // --- CALCULS FOURNISSEURS (ACHATS & RETOURS) ---
-                final purchasesAndReturns = transactions.where((t) => t.type == TransactionType.purchase || t.type == TransactionType.purchaseReturn).toList();
-                double caPurchases = purchasesAndReturns.fold(0.0, (sum, t) => sum + t.netToPay);
+                    double beneficeTrans = trips.fold(0.0, (sum, t) => sum + t.netProfit);
+                    double soldeCaisse = totalEncaisseSales - totalPayePurchases;
 
-                double totalPayePurchases = payments.where((p) => p.tierType == TierType.supplier).fold(0.0, (sum, p) => sum + p.amount);
-                for (var t in purchasesAndReturns) {
-                  if (t.amountPaid > 0 && t.type == TransactionType.purchase) {
-                    bool alreadyCounted = payments.any((p) => p.invoiceNumber == t.invoiceNumber && p.reference.contains('Acompte'));
-                    if (!alreadyCounted) totalPayePurchases += t.amountPaid;
-                  }
-                }
-
-                double totalImpayesPurchases = caPurchases - totalPayePurchases;
-
-                // --- TRANSPORT ---
-                double beneficeTrans = trips.fold(0.0, (sum, t) => sum + t.netProfit);
-
-                // --- TRÉSORERIE ---
-                double soldeCaisse = totalEncaisseSales - totalPayePurchases;
-
-                return Center(
-                  child: Container(
-                    constraints: const BoxConstraints(maxWidth: 1000),
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 30.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (canViewSales) ...[
-                            const Text('SITUATION CLIENTS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, letterSpacing: 1.1, fontSize: 13)),
-                            const SizedBox(height: 15),
-                            GridView.count(
-                              crossAxisCount: MediaQuery.of(context).size.width > 600 ? 3 : 2,
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              crossAxisSpacing: 10,
-                              mainAxisSpacing: 10,
-                              childAspectRatio: MediaQuery.of(context).size.width > 600 ? 2.5 : 1.4,
-                              children: [
-                                GestureDetector(
-                                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransactionListScreen(type: TransactionType.sale))),
-                                  child: DashboardCard(title: 'CHIFFRE D\'AFFAIRE', value: '${currencyFormat.format(caSales)} F', icon: Icons.trending_up, iconColor: Colors.blue),
-                                ),
-                                GestureDetector(
-                                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen())),
-                                  child: DashboardCard(title: 'ENCAISSÉ', value: '${currencyFormat.format(totalEncaisseSales)} F', icon: Icons.check_circle_outline, iconColor: Colors.green),
-                                ),
-                                GestureDetector(
-                                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TierListScreen(type: TierType.client))),
-                                  child: DashboardCard(title: 'IMPAYÉS CLIENTS', value: '${currencyFormat.format(totalImpayesSales < 0 ? 0 : totalImpayesSales)} F', icon: Icons.warning_amber_rounded, iconColor: Colors.red),
-                                ),
-                              ],
-                            ),
-                          ],
-                          const SizedBox(height: 35),
-                          if (canViewPurchases) ...[
-                            const Text('SITUATION FOURNISSEURS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, letterSpacing: 1.1, fontSize: 13)),
-                            const SizedBox(height: 15),
-                            GridView.count(
-                              crossAxisCount: 2,
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              crossAxisSpacing: 10,
-                              mainAxisSpacing: 10,
-                              childAspectRatio: MediaQuery.of(context).size.width > 600 ? 3.5 : 1.4,
-                              children: [
-                                GestureDetector(
-                                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransactionListScreen(type: TransactionType.purchase))),
-                                  child: DashboardCard(title: 'TOTAL ACHATS', value: '${currencyFormat.format(caPurchases)} F', icon: Icons.shopping_cart, iconColor: Colors.teal),
-                                ),
-                                GestureDetector(
-                                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TierListScreen(type: TierType.supplier))),
-                                  child: DashboardCard(title: 'DETTES FOURN.', value: '${currencyFormat.format(totalImpayesPurchases < 0 ? 0 : totalImpayesPurchases)} F', icon: Icons.money_off, iconColor: Colors.orange),
-                                ),
-                              ],
-                            ),
-                          ],
-                          const SizedBox(height: 35),
-                          const Text('SITUATION TRÉSORERIE', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, letterSpacing: 1.1, fontSize: 13)),
-                          const SizedBox(height: 15),
-                          SizedBox(
-                            width: MediaQuery.of(context).size.width > 600 ? 300 : double.infinity,
-                            child: GestureDetector(
-                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen())),
-                              child: DashboardCard(title: 'SOLDE CAISSE', value: '${currencyFormat.format(soldeCaisse)} F', icon: Icons.account_balance_wallet, iconColor: Colors.indigo),
-                            ),
-                          ),
-                          if (canViewTransport) ...[
-                            const SizedBox(height: 35),
-                            const Text('TRANSPORT & LOGISTIQUE', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, letterSpacing: 1.1, fontSize: 13)),
-                            const SizedBox(height: 15),
-                            SizedBox(
-                              width: 300,
-                              child: GestureDetector(
-                                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransportScreen())),
-                                child: DashboardCard(title: 'BÉNÉFICE TRANS.', value: '${currencyFormat.format(beneficeTrans)} F', icon: Icons.local_shipping, iconColor: Colors.purple),
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 40),
-                          const Text('Dernières Activités', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
-                          const SizedBox(height: 15),
-                          if (transactions.isEmpty)
-                            const Center(child: Padding(padding: EdgeInsets.all(20.0), child: Text('Aucune activité récente', style: TextStyle(color: Colors.grey))))
-                          else
-                            ListView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount: transactions.length > 5 ? 5 : transactions.length,
-                              itemBuilder: (context, index) {
-                                final t = transactions[index];
-                                return Card(
-                                  margin: const EdgeInsets.only(bottom: 10),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  child: ListTile(
-                                    leading: CircleAvatar(
-                                      backgroundColor: t.type == TransactionType.sale ? Colors.blue.shade50 : Colors.teal.shade50,
-                                      child: Icon(t.type == TransactionType.sale ? Icons.arrow_upward : Icons.arrow_downward, color: t.type == TransactionType.sale ? Colors.blue : Colors.teal, size: 20),
+                    return Center(
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 1000),
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('K-O SOLAR - TABLEAU DE BORD', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFF1A237E))),
+                              const SizedBox(height: 20),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const WeatherWidget(),
+                                  if (canViewAdvances)
+                                    GestureDetector(
+                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AdvanceManagementScreen())),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                        decoration: BoxDecoration(
+                                          gradient: const LinearGradient(colors: [Colors.teal, Color(0xFF00695C)]),
+                                          borderRadius: BorderRadius.circular(15),
+                                          boxShadow: [BoxShadow(color: Colors.teal.withOpacity(0.3), blurRadius: 8)],
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            const Text('AVANCES DISPO.', style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
+                                            Text('${currencyFormat.format(totalAvancesDispo)} F', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                                          ],
+                                        ),
+                                      ),
                                     ),
-                                    title: Text(t.tierName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                    subtitle: Text(DateFormat('dd MMMM yyyy').format(t.date)),
-                                    trailing: Text('${currencyFormat.format(t.totalHT)} F', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo)),
+                                ],
+                              ),
+                              const SizedBox(height: 30),
+                              if (canViewSales) ...[
+                                const Text('SITUATION CLIENTS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, letterSpacing: 1.1, fontSize: 13)),
+                                const SizedBox(height: 15),
+                                GridView.count(
+                                  crossAxisCount: MediaQuery.of(context).size.width > 600 ? 3 : 2,
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  crossAxisSpacing: 10,
+                                  mainAxisSpacing: 10,
+                                  childAspectRatio: MediaQuery.of(context).size.width > 600 ? 2.5 : 1.4,
+                                  children: [
+                                    GestureDetector(
+                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransactionListScreen(type: TransactionType.sale))),
+                                      child: DashboardCard(title: 'CHIFFRE D\'AFFAIRE', value: '${currencyFormat.format(caSales)} F', icon: Icons.trending_up, iconColor: Colors.blue),
+                                    ),
+                                    GestureDetector(
+                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen())),
+                                      child: DashboardCard(title: 'ENCAISSÉ', value: '${currencyFormat.format(totalEncaisseSales)} F', icon: Icons.check_circle_outline, iconColor: Colors.green),
+                                    ),
+                                    GestureDetector(
+                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TierListScreen(type: TierType.client))),
+                                      child: DashboardCard(title: 'IMPAYÉS CLIENTS', value: '${currencyFormat.format(totalImpayesSales < 0 ? 0 : totalImpayesSales)} F', icon: Icons.warning_amber_rounded, iconColor: Colors.red),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              const SizedBox(height: 35),
+                              if (canViewPurchases) ...[
+                                const Text('SITUATION FOURNISSEURS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, letterSpacing: 1.1, fontSize: 13)),
+                                const SizedBox(height: 15),
+                                GridView.count(
+                                  crossAxisCount: 2,
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  crossAxisSpacing: 10,
+                                  mainAxisSpacing: 10,
+                                  childAspectRatio: MediaQuery.of(context).size.width > 600 ? 3.5 : 1.4,
+                                  children: [
+                                    GestureDetector(
+                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransactionListScreen(type: TransactionType.purchase))),
+                                      child: DashboardCard(title: 'TOTAL ACHATS', value: '${currencyFormat.format(caPurchases)} F', icon: Icons.shopping_cart, iconColor: Colors.teal),
+                                    ),
+                                    GestureDetector(
+                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TierListScreen(type: TierType.supplier))),
+                                      child: DashboardCard(title: 'DETTES FOURN.', value: '${currencyFormat.format(totalImpayesPurchases < 0 ? 0 : totalImpayesPurchases)} F', icon: Icons.money_off, iconColor: Colors.orange),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              const SizedBox(height: 35),
+                              const Text('SITUATION TRÉSORERIE', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, letterSpacing: 1.1, fontSize: 13)),
+                              const SizedBox(height: 15),
+                              SizedBox(
+                                width: MediaQuery.of(context).size.width > 600 ? 300 : double.infinity,
+                                child: GestureDetector(
+                                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen())),
+                                  child: DashboardCard(title: 'SOLDE CAISSE', value: '${currencyFormat.format(soldeCaisse)} F', icon: Icons.account_balance_wallet, iconColor: Colors.indigo),
+                                ),
+                              ),
+                              if (canViewTransport) ...[
+                                const SizedBox(height: 35),
+                                const Text('TRANSPORT & LOGISTIQUE', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, letterSpacing: 1.1, fontSize: 13)),
+                                const SizedBox(height: 15),
+                                SizedBox(
+                                  width: 300,
+                                  child: GestureDetector(
+                                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransportScreen())),
+                                    child: DashboardCard(title: 'BÉNÉFICE TRANS.', value: '${currencyFormat.format(beneficeTrans)} F', icon: Icons.local_shipping, iconColor: Colors.purple),
                                   ),
-                                );
-                              },
-                            ),
-                        ],
+                                ),
+                              ],
+                              const SizedBox(height: 40),
+                              const Text('Dernières Activités', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
+                              const SizedBox(height: 15),
+                              if (transactions.isEmpty)
+                                const Center(child: Padding(padding: EdgeInsets.all(20.0), child: Text('Aucune activité récente', style: TextStyle(color: Colors.grey))))
+                              else
+                                ListView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  itemCount: transactions.length > 5 ? 5 : transactions.length,
+                                  itemBuilder: (context, index) {
+                                    final t = transactions[index];
+                                    return Card(
+                                      margin: const EdgeInsets.only(bottom: 10),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      child: ListTile(
+                                        leading: CircleAvatar(
+                                          backgroundColor: t.type == TransactionType.sale ? Colors.blue.shade50 : Colors.teal.shade50,
+                                          child: Icon(t.type == TransactionType.sale ? Icons.arrow_upward : Icons.arrow_downward, color: t.type == TransactionType.sale ? Colors.blue : Colors.teal, size: 20),
+                                        ),
+                                        title: Text(t.tierName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                        subtitle: Text(DateFormat('dd MMMM yyyy').format(t.date)),
+                                        trailing: Text('${currencyFormat.format(t.totalHT)} F', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo)),
+                                      ),
+                                    );
+                                  },
+                                ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  }
                 );
               }
             );

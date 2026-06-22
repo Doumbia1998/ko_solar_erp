@@ -324,14 +324,17 @@ class FirestoreService {
 
   // --- TRANSACTIONS ---
   Stream<List<AppTransaction>> getTransactions({TransactionType? type, int? limit}) {
-    Query query = _db.collection('transactions');
-    if (type != null) query = query.where('type', isEqualTo: type.toString().split('.').last);
-
-    query = query.orderBy('date', descending: true);
-    if (limit != null) query = query.limit(limit);
-
-    return query.snapshots().map((snap) {
-      return snap.docs.map((doc) => AppTransaction.fromMap(doc.data() as Map<String, dynamic>, doc.id)).toList();
+    return _db.collection('transactions').snapshots().map((snap) {
+      var list = snap.docs.map((doc) => AppTransaction.fromMap(doc.data() as Map<String, dynamic>, doc.id)).toList();
+      if (type != null) {
+        final typeStr = type.toString().split('.').last;
+        list = list.where((t) => t.type.toString().split('.').last == typeStr).toList();
+      }
+      list.sort((a, b) => b.date.compareTo(a.date));
+      if (limit != null && list.length > limit) {
+        list = list.take(limit).toList();
+      }
+      return list;
     });
   }
 
