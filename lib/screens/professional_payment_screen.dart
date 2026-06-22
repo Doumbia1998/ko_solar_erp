@@ -8,6 +8,7 @@ import '../models/tier.dart';
 import '../models/transaction.dart';
 import '../models/app_user.dart';
 import '../models/journal_config.dart';
+import '../models/payment_method_config.dart';
 import '../services/auth_service.dart';
 import '../services/report_service.dart';
 
@@ -29,7 +30,7 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
   final _libelleController = TextEditingController();
   final _montantController = TextEditingController();
   String? _selectedJournalCode;
-  String _selectedMethod = 'Espèces';
+  String? _selectedMethod;
 
   DateTime? _filterStartDate;
   DateTime? _filterEndDate;
@@ -52,13 +53,9 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
         actions: [
           _toolbarButton(Icons.settings, 'Paramètres', onTap: () => _showJournalConfig(context, service)),
           const SizedBox(width: 10),
-          _toolbarButton(Icons.history, 'Historique'),
-          const SizedBox(width: 10),
           if (_selectedTier != null)
             _toolbarButton(Icons.playlist_add_check, 'Sélectionner',
               onTap: () => _openMaturitySelection(context, service)),
-          const SizedBox(width: 10),
-          _toolbarButton(Icons.remove_red_eye, 'Visualiser'),
           const SizedBox(width: 10),
           _toolbarButton(Icons.print, 'Imprimer', onTap: () => _printDailyPayments(service)),
           const SizedBox(width: 20),
@@ -121,7 +118,7 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
                           builder: (context, snapshot) {
                             var tiers = snapshot.data ?? [];
                             if (_tierSearchQuery.isNotEmpty) {
-                              tiers = tiers.where((t) => t.name.toLowerCase().contains(_tierSearchQuery.toLowerCase()) || t.accountNumber.contains(_tierSearchQuery)).toList();
+                              tiers = tiers.where((t) => t.name.toLowerCase().contains(_tierSearchQuery.toLowerCase()) || t.compteTiers.contains(_tierSearchQuery.toUpperCase())).toList();
                             }
                             return Container(
                               height: 40,
@@ -136,7 +133,7 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
                                         value: _selectedTier,
                                         hint: Text(_tierSearchQuery.isEmpty ? "Chercher un compte..." : _tierSearchQuery),
                                         style: const TextStyle(fontSize: 14, color: Colors.black),
-                                        items: tiers.map((t) => DropdownMenuItem(value: t, child: Text('${t.accountNumber} ${t.name.toUpperCase()}'))).toList(),
+                                        items: tiers.map((t) => DropdownMenuItem(value: t, child: Text('${t.compteTiers} ${t.name.toUpperCase()}'))).toList(),
                                         onChanged: (val) {
                                           setState(() {
                                             _selectedTier = val;
@@ -196,7 +193,14 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
                       _inputBox('Date', 90, controller: _dateController),
                       _inputBox('N° Pièce', 140, controller: _pieceController),
                       _inputBox('Libellé', 300, controller: _libelleController),
-                      _dropdownBox('Mode', 160, _selectedMethod, ['Espèces', 'Chèque', 'Virement', 'Mobile Money', 'Banque BIM SA'], (val) => setState(() => _selectedMethod = val!)),
+                      StreamBuilder<List<PaymentMethodConfig>>(
+                        stream: service.getPaymentMethodConfigs(),
+                        builder: (context, snapshot) {
+                          final methods = snapshot.data ?? [];
+                          if (_selectedMethod == null && methods.isNotEmpty) _selectedMethod = methods.first.name;
+                          return _dropdownBox('Mode', 160, _selectedMethod ?? '', methods.map((m) => m.name).toList(), (val) => setState(() => _selectedMethod = val!));
+                        },
+                      ),
                       _inputBox('Montant', 150, controller: _montantController, isNumeric: true),
                       const Spacer(),
                       ElevatedButton(
@@ -209,70 +213,95 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
                 ),
 
                 Expanded(
-                  child: _selectedTier == null
-                      ? const Center(child: Text('Sélectionnez un compte tiers.'))
-                      : StreamBuilder<List<Payment>>(
-                          stream: service.getPayments(tierId: _selectedTier!.id),
-                          builder: (context, snapshot) {
-                            return StreamBuilder<List<AppTransaction>>(
-                              stream: service.getTransactions(),
-                              builder: (context, snapshotTrans) {
-                                var payments = snapshot.data ?? [];
-                                final allTxs = snapshotTrans.data ?? [];
-                                final returns = allTxs.where((t) => t.tierId == _selectedTier!.id && (t.type == TransactionType.saleReturn || t.type == TransactionType.purchaseReturn)).toList();
-                                List<dynamic> entries = [...payments, ...returns];
-                                entries.sort((a, b) {
-                                  DateTime dateA = a is Payment ? a.date : (a as AppTransaction).date;
-                                  DateTime dateB = b is Payment ? b.date : (b as AppTransaction).date;
-                                  return dateB.compareTo(dateA);
-                                });
+                  child: Container(
+                    width: double.infinity,
+                    color: Colors.white,
+                    child: _selectedTier == null
+                        ? const Center(child: Text('Sélectionnez un compte tiers.'))
+                        : StreamBuilder<List<Payment>>(
+                            stream: service.getPayments(tierId: _selectedTier!.id),
+                            builder: (context, snapshot) {
+                              return StreamBuilder<List<AppTransaction>>(
+                                stream: service.getTransactions(),
+                                builder: (context, snapshotTrans) {
+                                  var payments = snapshot.data ?? [];
+                                  final allTxs = snapshotTrans.data ?? [];
+                                  final returns = allTxs.where((t) => t.tierId == _selectedTier!.id && (t.type == TransactionType.saleReturn || t.type == TransactionType.purchaseReturn)).toList();
+                                  List<dynamic> entries = [...payments, ...returns];
+                                  entries.sort((a, b) {
+                                    DateTime dateA = a is Payment ? a.date : (a as AppTransaction).date;
+                                    DateTime dateB = b is Payment ? b.date : (b as AppTransaction).date;
+                                    return dateB.compareTo(dateA);
+                                  });
 
-                                return SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: SingleChildScrollView(
-                                    child: DataTable(
-                                      headingRowColor: MaterialStateProperty.all(const Color(0xFF2D3748)),
-                                      headingTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                                      columns: const [
-                                        DataColumn(label: Text('Date')),
-                                        DataColumn(label: Text('N° pièce')),
-                                        DataColumn(label: Text('Libellé')),
-                                        DataColumn(label: Text('Mode règlement')),
-                                        DataColumn(label: Text('Montant')),
-                                        DataColumn(label: Text('Journal')),
-                                        DataColumn(label: Text('Action')),
-                                      ],
-                                      rows: entries.map((e) {
-                                        if (e is Payment) {
-                                          return DataRow(cells: [
-                                            DataCell(Text(DateFormat('dd/MM/yy').format(e.date))),
-                                            DataCell(Text(e.reference)),
-                                            DataCell(Text(e.invoiceNumber != null ? 'ENC FA${e.invoiceNumber}' : e.reference)),
-                                            DataCell(Text(e.method)),
-                                            DataCell(Text(_format.format(e.amount), style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold))),
-                                            DataCell(_rowJournalDropdown(e, service)),
-                                            DataCell(IconButton(icon: const Icon(Icons.delete, color: Colors.red, size: 18), onPressed: () => service.deletePayment(e.id))),
-                                          ]);
-                                        } else {
-                                          final t = e as AppTransaction;
-                                          return DataRow(color: MaterialStateProperty.all(Colors.red.shade50), cells: [
-                                            DataCell(Text(DateFormat('dd/MM/yy').format(t.date))),
-                                            DataCell(Text(t.invoiceNumber)),
-                                            const DataCell(Text('RETOUR MARCHANDISE', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
-                                            const DataCell(Text('AVOIR')),
-                                            DataCell(Text('- ${_format.format(t.netToPay.abs())}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
-                                            const DataCell(Text('OD')),
-                                            const DataCell(SizedBox()),
-                                          ]);
-                                        }
-                                      }).toList(),
-                                    ),
-                                  ),
-                                );
-                              },
-                            );
-                          },
-                        ),
+                                  return ListView(
+                                    children: [
+                                      DataTable(
+                                        horizontalMargin: 10,
+                                        columnSpacing: 10,
+                                        headingRowColor: WidgetStateProperty.all(const Color(0xFF2D3748)),
+                                        headingTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                        columns: const [
+                                          DataColumn(label: Text('Date')),
+                                          DataColumn(label: Text('N° pièce')),
+                                          DataColumn(label: Text('Libellé')),
+                                          DataColumn(label: Text('Mode règlement')),
+                                          DataColumn(label: Text('Montant')),
+                                          DataColumn(label: Text('Journal')),
+                                          DataColumn(label: Text('Action')),
+                                        ],
+                                        rows: entries.map((e) {
+                                          if (e is Payment) {
+                                            return DataRow(cells: [
+                                              DataCell(Text(DateFormat('dd/MM/yy').format(e.date))),
+                                              DataCell(Text(e.reference)),
+                                              DataCell(Text(e.invoiceNumber != null ? 'ENC FA${e.invoiceNumber}' : e.reference)),
+                                              DataCell(Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  Text(e.method),
+                                                  if (e.createdBy.isNotEmpty)
+                                                    Text('Fait par: ${e.createdBy}', style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.blueGrey)),
+                                                ],
+                                              )),
+                                              DataCell(Text(_format.format(e.amount).replaceAll(',', ' '), style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold))),
+                                              DataCell(_rowJournalDropdown(e, service)),
+                                              DataCell(IconButton(icon: const Icon(Icons.delete, color: Colors.red, size: 18), onPressed: () async {
+                                                final auth = Provider.of<AuthService>(context, listen: false);
+                                                final user = await auth.getAppUser((await auth.user.first)!.uid);
+                                                await service.deletePayment(e.id, user?.displayName ?? 'Admin');
+                                              })),
+                                            ]);
+                                          } else {
+                                            final t = e as AppTransaction;
+                                            return DataRow(color: WidgetStateProperty.all(Colors.red.shade50), cells: [
+                                              DataCell(Text(DateFormat('dd/MM/yy').format(t.date))),
+                                              DataCell(Text(t.invoiceNumber)),
+                                              const DataCell(Text('RETOUR MARCHANDISE', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
+                                              DataCell(Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  const Text('AVOIR'),
+                                                  if (t.createdBy.isNotEmpty)
+                                                    Text('Fait par: ${t.createdBy}', style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.red)),
+                                                ],
+                                              )),
+                                              DataCell(Text('- ${_format.format(t.netToPay.abs()).replaceAll(',', ' ')}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
+                                              const DataCell(Text('OD')),
+                                              const DataCell(SizedBox()),
+                                            ]);
+                                          }
+                                        }).toList(),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                  ),
                 ),
 
                 if (_selectedTier != null)
@@ -296,61 +325,7 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
                       );
                     }
                   ),
-                // --- SECTION TRACABILITÉ BAS DE PAGE ---
-                _buildAuditSection(),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAuditSection() {
-    return Container(
-      height: 120,
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        border: Border(top: BorderSide(color: Colors.grey.shade300, width: 2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Text('DERNIÈRES ACTIONS RÈGLEMENTS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10, color: Colors.blueGrey)),
-          ),
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('audit_logs')
-                  .where('entity', isEqualTo: 'payments')
-                  .orderBy('timestamp', descending: true)
-                  .limit(4)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) return const SizedBox();
-                final logs = snapshot.data!.docs;
-                return ListView.builder(
-                  padding: EdgeInsets.zero,
-                  itemCount: logs.length,
-                  itemBuilder: (context, index) {
-                    final log = logs[index].data() as Map<String, dynamic>;
-                    final ts = log['timestamp'] as Timestamp?;
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                      child: Row(
-                        children: [
-                          Text(ts != null ? DateFormat('dd/MM HH:mm').format(ts.toDate()) : '--', style: const TextStyle(fontSize: 9, color: Colors.grey)),
-                          const SizedBox(width: 10),
-                          Expanded(child: Text(log['details'] ?? '', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
-                          Text('par ${log['userName']}', style: const TextStyle(fontSize: 9, color: Colors.indigo)),
-                        ],
-                      ),
-                    );
-                  },
-                );
-              },
             ),
           ),
         ],
@@ -389,7 +364,13 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
     final end = _filterEndDate ?? now;
     var filtered = payments.where((p) => p.date.isAfter(start.subtract(const Duration(days: 1))) && p.date.isBefore(end.add(const Duration(days: 1))) && p.tierType == widget.type).toList();
     if (_selectedTier != null) filtered = filtered.where((p) => p.tierId == _selectedTier!.id).toList();
-    if (filtered.isEmpty) return;
+
+    if (filtered.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Aucun règlement trouvé pour l\'impression.')));
+      }
+      return;
+    }
     ReportService.generateDailyPaymentsReport(filtered, widget.type == TierType.client ? 'Clients' : 'Fournisseurs', tierName: _selectedTier?.name, start: _filterStartDate, end: _filterEndDate);
   }
 
@@ -399,7 +380,17 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
     if (amount <= 0) return;
     final auth = Provider.of<AuthService>(context, listen: false);
     final user = await auth.getAppUser((await auth.user.first)!.uid);
-    final p = Payment(id: '', tierId: _selectedTier!.id, tierName: _selectedTier!.name, tierType: widget.type, amount: amount, date: DateTime.now(), method: _selectedMethod, journalCode: _selectedJournalCode, reference: _pieceController.text.isEmpty ? 'RC${DateFormat('ddMMyy').format(DateTime.now())}' : _pieceController.text);
+    final p = Payment(
+      id: '',
+      tierId: _selectedTier!.id,
+      tierName: _selectedTier!.name,
+      tierType: widget.type,
+      amount: amount,
+      date: DateTime.now(),
+      method: _selectedMethod ?? 'Espèces',
+      journalCode: _selectedJournalCode,
+      reference: _pieceController.text.isEmpty ? 'RC${DateFormat('ddMMyy').format(DateTime.now())}' : _pieceController.text
+    );
     await Provider.of<FirestoreService>(context, listen: false).addPayment(p, user?.displayName ?? 'User');
     _resetEntry();
   }
@@ -426,17 +417,111 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
   }
 
   Widget _summary(String label, double val, {bool isBold = false}) {
-    return Padding(padding: const EdgeInsets.only(left: 60), child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)), Text(_format.format(val), style: TextStyle(fontWeight: isBold ? FontWeight.bold : FontWeight.w700, fontSize: 18, color: isBold ? Colors.black : Colors.green.shade800))]));
+    return Padding(padding: const EdgeInsets.only(left: 60), child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)), Text(_format.format(val).replaceAll(',', ' '), style: TextStyle(fontWeight: isBold ? FontWeight.bold : FontWeight.w700, fontSize: 18, color: isBold ? Colors.black : Colors.green.shade800))]));
   }
 
   void _showJournalConfig(BuildContext context, FirestoreService service) {
-    showDialog(context: context, builder: (context) => AlertDialog(title: const Text('Codes Journaux'), content: SizedBox(width: 500, height: 400, child: Column(children: [Expanded(child: StreamBuilder<List<JournalConfig>>(stream: service.getJournalConfigs(), builder: (context, snapshot) { final configs = snapshot.data ?? []; return ListView.builder(itemCount: configs.length, itemBuilder: (context, index) => ListTile(title: Text(configs[index].code, style: const TextStyle(fontWeight: FontWeight.bold)), subtitle: Text(configs[index].name), trailing: IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => service.deleteJournalConfig(configs[index].id)))); })), const Divider(), ElevatedButton.icon(onPressed: () => _addJournalDialog(context, service), icon: const Icon(Icons.add), label: const Text('AJOUTER UN JOURNAL'))]))));
+    showDialog(
+      context: context,
+      builder: (context) => DefaultTabController(
+        length: 2,
+        child: AlertDialog(
+          title: const Text('Paramètres Règlements'),
+          content: SizedBox(
+            width: 600,
+            height: 500,
+            child: Column(
+              children: [
+                const TabBar(
+                  labelColor: Colors.blue,
+                  unselectedLabelColor: Colors.grey,
+                  tabs: [
+                    Tab(text: 'COURS JOURNAUX'),
+                    Tab(text: 'MODES RÈGLEMENT'),
+                  ],
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      // Onglet 1: Journaux
+                      Column(
+                        children: [
+                          Expanded(
+                            child: StreamBuilder<List<JournalConfig>>(
+                              stream: service.getJournalConfigs(),
+                              builder: (context, snapshot) {
+                                final configs = snapshot.data ?? [];
+                                return ListView.builder(
+                                  itemCount: configs.length,
+                                  itemBuilder: (context, index) => ListTile(
+                                    title: Text(configs[index].code, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    subtitle: Text(configs[index].name),
+                                    trailing: IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => service.deleteJournalConfig(configs[index].id)),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          ElevatedButton.icon(onPressed: () => _addJournalDialog(context, service), icon: const Icon(Icons.add), label: const Text('AJOUTER UN JOURNAL')),
+                        ],
+                      ),
+                      // Onglet 2: Modes règlement
+                      Column(
+                        children: [
+                          Expanded(
+                            child: StreamBuilder<List<PaymentMethodConfig>>(
+                              stream: service.getPaymentMethodConfigs(),
+                              builder: (context, snapshot) {
+                                final methods = snapshot.data ?? [];
+                                return ListView.builder(
+                                  itemCount: methods.length,
+                                  itemBuilder: (context, index) => ListTile(
+                                    title: Text(methods[index].name),
+                                    trailing: IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => service.deletePaymentMethodConfig(methods[index].id)),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          ElevatedButton.icon(onPressed: () => _addPaymentMethodDialog(context, service), icon: const Icon(Icons.add), label: const Text('AJOUTER UN MODE')),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('FERMER'))],
+        ),
+      ),
+    );
   }
 
   void _addJournalDialog(BuildContext context, FirestoreService service) {
     final codeCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
     showDialog(context: context, builder: (context) => AlertDialog(title: const Text('Nouveau Journal'), content: Column(mainAxisSize: MainAxisSize.min, children: [TextField(controller: codeCtrl, decoration: const InputDecoration(labelText: 'Code')), TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Désignation'))]), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('ANNULER')), ElevatedButton(onPressed: () { if (codeCtrl.text.isNotEmpty) { service.addJournalConfig(JournalConfig(id: '', code: codeCtrl.text.toUpperCase(), name: nameCtrl.text)); Navigator.pop(context); } }, child: const Text('CRÉER'))]));
+  }
+
+  void _addPaymentMethodDialog(BuildContext context, FirestoreService service) {
+    final nameCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Nouveau Mode de Règlement'),
+        content: TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Nom du mode (ex: BIM SA, ORANGE MONEY)')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('ANNULER')),
+          ElevatedButton(onPressed: () {
+            if (nameCtrl.text.isNotEmpty) {
+              service.addPaymentMethodConfig(PaymentMethodConfig(id: '', name: nameCtrl.text));
+              Navigator.pop(context);
+            }
+          }, child: const Text('CRÉER')),
+        ],
+      ),
+    );
   }
 
   void _openMaturitySelection(BuildContext context, FirestoreService service) async {
@@ -463,6 +548,7 @@ class _MaturitySelectionDialogState extends State<MaturitySelectionDialog> {
   final Map<String, TextEditingController> _controllers = {};
   double _montantRegle = 0;
   final _montantRegleController = TextEditingController();
+  String? _selectedMode; // Nouveau
 
   @override
   void dispose() {
@@ -512,6 +598,27 @@ class _MaturitySelectionDialogState extends State<MaturitySelectionDialog> {
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       onChanged: (val) => setState(() => _montantRegle = double.tryParse(val) ?? 0),
                     ),
+                  ),
+                  const SizedBox(width: 15),
+                  const Text('Mode : ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                  StreamBuilder<List<PaymentMethodConfig>>(
+                    stream: widget.service.getPaymentMethodConfigs(),
+                    builder: (context, snapshot) {
+                      final methods = snapshot.data ?? [];
+                      if (_selectedMode == null && methods.isNotEmpty) _selectedMode = methods.first.name;
+                      return Container(
+                        width: 150,
+                        height: 40,
+                        decoration: BoxDecoration(border: Border.all(color: Colors.grey), borderRadius: BorderRadius.circular(4)),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _selectedMode,
+                            items: methods.map((m) => DropdownMenuItem(value: m.name, child: Padding(padding: const EdgeInsets.only(left: 8), child: Text(m.name)))).toList(),
+                            onChanged: (v) => setState(() => _selectedMode = v),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                   const SizedBox(width: 15),
                   ElevatedButton(
@@ -576,8 +683,8 @@ class _MaturitySelectionDialogState extends State<MaturitySelectionDialog> {
                                 DataCell(Text(DateFormat('dd/MM/yy').format(t.date), style: const TextStyle(fontSize: 13))),
                                 DataCell(Text(t.invoiceNumber, style: const TextStyle(fontSize: 13))),
                                 DataCell(Text(isReturn ? "RETOUR" : "FACTURE", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isReturn ? Colors.red : Colors.grey))),
-                                DataCell(Text(NumberFormat('#,###').format(t.netToPay.abs()), style: const TextStyle(fontSize: 13))),
-                                DataCell(Text('${solde < 0 ? "-" : ""}${NumberFormat('#,###').format(solde.abs())}', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: solde > 0 ? Colors.red : Colors.green))),
+                                DataCell(Text(NumberFormat('#,###').format(t.netToPay.abs()).replaceAll(',', ' '), style: const TextStyle(fontSize: 13))),
+                                DataCell(Text('${solde < 0 ? "-" : ""}${NumberFormat('#,###').format(solde.abs()).replaceAll(',', ' ')}', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: solde > 0 ? Colors.red : Colors.green))),
                                 DataCell(Container(
                                   width: 140,
                                   height: 32,
@@ -658,7 +765,18 @@ class _MaturitySelectionDialogState extends State<MaturitySelectionDialog> {
     });
     if (finalAllocations.isEmpty) { Navigator.pop(context); return; }
     for (var entry in finalAllocations.entries) {
-      final p = Payment(id: '', tierId: widget.tier.id, tierName: widget.tier.name, tierType: widget.tier.type, amount: entry.value, date: DateTime.now(), method: 'Compensation', journalCode: widget.journalCode, reference: 'REG-${entry.key}', invoiceNumber: entry.key);
+      final p = Payment(
+        id: '',
+        tierId: widget.tier.id,
+        tierName: widget.tier.name,
+        tierType: widget.tier.type,
+        amount: entry.value,
+        date: DateTime.now(),
+        method: _selectedMode ?? 'Imputation',
+        journalCode: widget.journalCode,
+        reference: 'REG-${entry.key}',
+        invoiceNumber: entry.key
+      );
       await widget.service.addPayment(p, widget.userName);
     }
     if (mounted) Navigator.pop(context);

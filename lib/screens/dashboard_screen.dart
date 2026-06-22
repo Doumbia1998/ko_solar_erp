@@ -32,6 +32,12 @@ import 'weather_alert_screen.dart';
 import 'unpaid_reminder_screen.dart';
 import 'stock_transfer_screen.dart';
 import 'audit_logs_screen.dart';
+import 'expense_screen.dart';
+import 'advance_management_screen.dart';
+import 'payroll_screen.dart';
+import 'import_export_screen.dart';
+import 'fiscal_year_screen.dart';
+import 'trial_balance_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -60,6 +66,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final canViewTiers = isAdmin || currentUser.canViewTiers;
     final canManageUsers = isAdmin || currentUser.canManageUsers;
 
+    // Nouvelles permissions
+    final canViewAudit = isAdmin || currentUser.canViewAudit;
+    final canViewExpenses = isAdmin || currentUser.canViewExpenses;
+    final canViewAdvances = isAdmin || currentUser.canViewAdvances;
+    final canViewTransfers = isAdmin || currentUser.canViewTransfers;
+    final canViewReminders = isAdmin || currentUser.canViewReminders;
+    final canViewWeather = isAdmin || currentUser.canViewWeather;
+    final canViewDeliveries = isAdmin || currentUser.canViewDeliveries;
+    final canManagePayroll = isAdmin || currentUser.canManagePayroll;
+    final canImportExport = isAdmin || currentUser.canImportExport;
+
     List<Widget> pages;
     List<BottomNavigationBarItem> navItems;
 
@@ -84,16 +101,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } else {
       pages = [
         const DashboardContent(),
-        const TransactionListScreen(type: TransactionType.purchase),
-        const TransactionListScreen(type: TransactionType.sale),
-        StockTransferScreen(),
+        if (canViewPurchases) TransactionListScreen(type: TransactionType.purchase),
+        if (canViewSales) TransactionListScreen(type: TransactionType.sale),
+        if (canViewTransfers) StockTransferScreen(),
         const TransportScreen(),
       ];
       navItems = [
         const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Accueil'),
         if (canViewPurchases) const BottomNavigationBarItem(icon: Icon(Icons.shopping_cart), label: 'Achats'),
         if (canViewSales) const BottomNavigationBarItem(icon: Icon(Icons.sell), label: 'Ventes'),
-        const BottomNavigationBarItem(icon: Icon(Icons.swap_horiz), label: 'Transferts'),
+        if (canViewTransfers) const BottomNavigationBarItem(icon: Icon(Icons.swap_horiz), label: 'Transferts'),
         if (canViewTransport) const BottomNavigationBarItem(icon: Icon(Icons.local_shipping), label: 'Transport'),
       ];
     }
@@ -104,7 +121,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(currentUser.displayName.toUpperCase(), style: const TextStyle(fontSize: 10, color: Colors.grey)),
-            Text(isAdmin ? 'ADMINISTRATION' : (isTechManager ? 'RESPONSABLE TECHNIQUE' : (isStorekeeper ? 'ESPACE MAGASINIER' : 'KO SOLAR ERP')),
+            Text(isAdmin ? 'ADMINISTRATION' : (isTechManager ? 'RESPONSABLE TECHNIQUE' : (isStorekeeper ? 'ESPACE MAGASINIER' : 'K-O SOLAR')),
               style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E), fontSize: 17)),
           ],
         ),
@@ -126,16 +143,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
             _buildDrawerTile(context, Icons.inventory, 'Stocks', Colors.blueGrey, const StockScreen()),
-            _buildDrawerTile(context, Icons.request_quote, 'Devis', Colors.purple, const TransactionListScreen(type: TransactionType.quote)),
-            _buildDrawerTile(context, Icons.local_shipping, 'Livraisons (BL)', Colors.orange, const DeliveryListScreen()),
-            _buildDrawerTile(context, Icons.assignment, 'Gestion des Chantiers', Colors.deepOrange, const TaskAssignmentScreen()),
-            _buildDrawerTile(context, Icons.warning_amber, 'Relance des Impayés', Colors.red, const UnpaidReminderScreen()),
-            _buildDrawerTile(context, Icons.cloud, 'Avertissement Météo', Colors.orange, const WeatherAlertScreen()),
-            _buildDrawerTile(context, Icons.warehouse, 'Gestion des Dépôts', Colors.brown, const WarehouseListScreen()),
+            if (canViewSales)
+              _buildDrawerTile(context, Icons.request_quote, 'Devis', Colors.purple, const TransactionListScreen(type: TransactionType.quote)),
+            if (canViewExpenses)
+              _buildDrawerTile(context, Icons.money_off, 'Gestion des Dépenses', Colors.redAccent, const ExpenseScreen()),
+            if (canViewAdvances)
+              _buildDrawerTile(context, Icons.savings, 'Gestion des Avances', Colors.teal, const AdvanceManagementScreen()),
+            if (canViewDeliveries)
+              _buildDrawerTile(context, Icons.local_shipping, 'Livraisons (BL)', Colors.orange, const DeliveryListScreen()),
+            if (canManagePayroll)
+              _buildDrawerTile(context, Icons.badge, 'Gestion de la Paie', Colors.blue, const PayrollScreen()),
+            if (canImportExport)
+              _buildDrawerTile(context, Icons.import_export, 'Import / Export Sage', Colors.grey, const ImportExportScreen()),
+
+            if (isAdmin || isTechManager || isTechnician)
+              _buildDrawerTile(context, Icons.assignment, 'Gestion des Chantiers', Colors.deepOrange, const TaskAssignmentScreen()),
+
+            if (canViewReminders)
+              _buildDrawerTile(context, Icons.warning_amber, 'Relance des Impayés', Colors.red, const UnpaidReminderScreen()),
+            if (canViewWeather)
+              _buildDrawerTile(context, Icons.cloud, 'Avertissement Météo', Colors.orange, const WeatherAlertScreen()),
+
+            if (isAdmin || isStorekeeper)
+              _buildDrawerTile(context, Icons.warehouse, 'Gestion des Dépôts', Colors.brown, const WarehouseListScreen()),
             const Divider(),
-            _buildDrawerTile(context, Icons.payments, 'Règlements', Colors.green, const PaymentScreen()),
-            _buildDrawerTile(context, Icons.money_off, 'État des Impayés', Colors.red, const UnpaidReportScreen()),
-            _buildDrawerTile(context, Icons.lock_clock, 'Clôture de Journée', Colors.red, const DailyClosingScreen()),
+            if (isAdmin || canViewAccounting) ...[
+              _buildDrawerTile(context, Icons.payments, 'Règlements', Colors.green, const PaymentScreen()),
+              _buildDrawerTile(context, Icons.money_off, 'État des Impayés', Colors.red, const UnpaidReportScreen()),
+              if (isAdmin) _buildDrawerTile(context, Icons.lock_clock, 'Clôture de Journée', Colors.red, const DailyClosingScreen()),
+            ],
             if (canViewTiers) ...[
               const Divider(),
               _buildDrawerTile(context, Icons.people, 'Clients', Colors.indigo, const TierListScreen(type: TierType.client)),
@@ -145,12 +181,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const Divider(),
               _buildDrawerTile(context, Icons.account_balance, 'Plan Comptable', Colors.indigo, const AccountListScreen()),
               _buildDrawerTile(context, Icons.menu_book, 'Journal Comptable', Colors.brown, const JournalScreen()),
+              _buildDrawerTile(context, Icons.receipt_long, 'Balance des Comptes', Colors.teal, const TrialBalanceScreen()),
+              _buildDrawerTile(context, Icons.date_range, 'Exercices Comptables', Colors.blueAccent, const FiscalYearScreen()),
               _buildDrawerTile(context, Icons.account_balance_wallet, 'Rapprochement Bancaire', Colors.green, const ReconciliationScreen()),
             ],
             if (canManageUsers) ...[
               const Divider(),
               _buildDrawerTile(context, Icons.analytics, 'Statistiques & Marges', Colors.orange, const StatisticsScreen()),
-              _buildDrawerTile(context, Icons.security, 'Audit & Traçabilité', Colors.blueGrey, const AuditLogsScreen()),
+              if (canViewAudit)
+                _buildDrawerTile(context, Icons.security, 'Audit & Traçabilité', Colors.blueGrey, const AuditLogsScreen()),
               _buildDrawerTile(context, Icons.admin_panel_settings, 'Gestion Utilisateurs', Colors.red, const UserManagementScreen()),
             ],
           ],
@@ -252,7 +291,7 @@ class DashboardContent extends StatelessWidget {
     final canViewTransport = isAdmin || currentUser.canViewTransport;
 
     return StreamBuilder<List<AppTransaction>>(
-      stream: firestoreService.getTransactions(),
+      stream: firestoreService.getTransactions(limit: 50), // On limite a 50 pour la fluidite du tableau de bord
       builder: (context, snapshotTrans) {
         return StreamBuilder<List<Trip>>(
           stream: firestoreService.getTrips(),
@@ -264,27 +303,47 @@ class DashboardContent extends StatelessWidget {
                 final trips = snapshotTrips.data ?? [];
                 final payments = snapshotPay.data ?? [];
 
+                // On évite les calculs lourds si on n'a pas encore de données
+                if (snapshotTrans.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
                 // --- CALCULS CLIENTS (VENTES & RETOURS) ---
                 final salesAndReturns = transactions.where((t) => t.type == TransactionType.sale || t.type == TransactionType.saleReturn).toList();
                 double caSales = salesAndReturns.fold(0.0, (sum, t) => sum + t.netToPay);
-                double paidInitialSales = salesAndReturns.fold(0.0, (sum, t) => sum + t.amountPaid);
-                double reglementsSales = payments.where((p) => p.tierType == TierType.client).fold(0.0, (sum, p) => sum + p.amount);
-                double totalEncaisseSales = paidInitialSales + reglementsSales;
+
+                // On récupère tout l'argent encaissé via les règlements (qui incluent déjà les acomptes créés à la facturation)
+                double totalEncaisseSales = payments.where((p) => p.tierType == TierType.client).fold(0.0, (sum, p) => sum + p.amount);
+
+                // Pour la sécurité, on vérifie s'il y a des acomptes sur factures qui n'ont pas encore de doc "payment" associé
+                for (var t in salesAndReturns) {
+                  if (t.amountPaid > 0 && t.type == TransactionType.sale) {
+                    bool alreadyCounted = payments.any((p) => p.invoiceNumber == t.invoiceNumber && p.reference.contains('Acompte'));
+                    if (!alreadyCounted) totalEncaisseSales += t.amountPaid;
+                  }
+                }
+
                 double totalImpayesSales = caSales - totalEncaisseSales;
 
                 // --- CALCULS FOURNISSEURS (ACHATS & RETOURS) ---
                 final purchasesAndReturns = transactions.where((t) => t.type == TransactionType.purchase || t.type == TransactionType.purchaseReturn).toList();
                 double caPurchases = purchasesAndReturns.fold(0.0, (sum, t) => sum + t.netToPay);
-                double paidInitialPurchases = purchasesAndReturns.fold(0.0, (sum, t) => sum + t.amountPaid);
-                double reglementsPurchases = payments.where((p) => p.tierType == TierType.supplier).fold(0.0, (sum, p) => sum + p.amount);
-                double totalPayePurchases = paidInitialPurchases + reglementsPurchases;
+
+                double totalPayePurchases = payments.where((p) => p.tierType == TierType.supplier).fold(0.0, (sum, p) => sum + p.amount);
+                for (var t in purchasesAndReturns) {
+                  if (t.amountPaid > 0 && t.type == TransactionType.purchase) {
+                    bool alreadyCounted = payments.any((p) => p.invoiceNumber == t.invoiceNumber && p.reference.contains('Acompte'));
+                    if (!alreadyCounted) totalPayePurchases += t.amountPaid;
+                  }
+                }
+
                 double totalImpayesPurchases = caPurchases - totalPayePurchases;
 
                 // --- TRANSPORT ---
                 double beneficeTrans = trips.fold(0.0, (sum, t) => sum + t.netProfit);
 
                 // --- TRÉSORERIE ---
-                double soldeCaisse = reglementsSales - reglementsPurchases;
+                double soldeCaisse = totalEncaisseSales - totalPayePurchases;
 
                 return Center(
                   child: Container(

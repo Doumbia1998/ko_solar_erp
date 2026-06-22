@@ -35,6 +35,17 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   bool _canViewTransport = false;
   bool _canEditTransport = false;
 
+  // Nouveaux modules
+  bool _canViewAudit = false;
+  bool _canViewExpenses = false;
+  bool _canViewAdvances = false;
+  bool _canViewTransfers = false;
+  bool _canViewReminders = false;
+  bool _canViewWeather = false;
+  bool _canViewDeliveries = false;
+  bool _canManagePayroll = false;
+  bool _canImportExport = false;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -151,6 +162,15 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     _canDeleteTiers = user.canDeleteTiers;
     _canViewTransport = user.canViewTransport;
     _canEditTransport = user.canEditTransport;
+    _canViewAudit = user.canViewAudit;
+    _canViewExpenses = user.canViewExpenses;
+    _canViewAdvances = user.canViewAdvances;
+    _canViewTransfers = user.canViewTransfers;
+    _canViewReminders = user.canViewReminders;
+    _canViewWeather = user.canViewWeather;
+    _canViewDeliveries = user.canViewDeliveries;
+    _canManagePayroll = user.canManagePayroll;
+    _canImportExport = user.canImportExport;
 
     final service = context.read<FirestoreService>();
 
@@ -206,6 +226,17 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 _buildPermissionSwitch(setDialogState, 'Supprimer Tiers', _canDeleteTiers, (v) => _canDeleteTiers = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Transport', _canViewTransport, (v) => _canViewTransport = v),
                 _buildPermissionSwitch(setDialogState, 'Gérer Transport', _canEditTransport, (v) => _canEditTransport = v),
+                const Divider(),
+                const Text('Nouveaux Modules', style: TextStyle(fontWeight: FontWeight.bold)),
+                _buildPermissionSwitch(setDialogState, 'Voir Audit/Traçabilité', _canViewAudit, (v) => _canViewAudit = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Dépenses', _canViewExpenses, (v) => _canViewExpenses = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Avances', _canViewAdvances, (v) => _canViewAdvances = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Transferts Stock', _canViewTransfers, (v) => _canViewTransfers = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Relance Impayés', _canViewReminders, (v) => _canViewReminders = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Alertes Météo', _canViewWeather, (v) => _canViewWeather = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Livraisons (BL)', _canViewDeliveries, (v) => _canViewDeliveries = v),
+                _buildPermissionSwitch(setDialogState, 'Gérer la Paie', _canManagePayroll, (v) => _canManagePayroll = v),
+                _buildPermissionSwitch(setDialogState, 'Import / Export Sage', _canImportExport, (v) => _canImportExport = v),
               ],
             ),
           ),
@@ -232,6 +263,15 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                   canDeleteTiers: _canDeleteTiers,
                   canViewTransport: _canViewTransport,
                   canEditTransport: _canEditTransport,
+                  canViewAudit: _canViewAudit,
+                  canViewExpenses: _canViewExpenses,
+                  canViewAdvances: _canViewAdvances,
+                  canViewTransfers: _canViewTransfers,
+                  canViewReminders: _canViewReminders,
+                  canViewWeather: _canViewWeather,
+                  canViewDeliveries: _canViewDeliveries,
+                  canManagePayroll: _canManagePayroll,
+                  canImportExport: _canImportExport,
                 );
                 await FirebaseFirestore.instance.collection('users').doc(user.uid).set(updatedUser.toMap());
                 Navigator.pop(context);
@@ -253,7 +293,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     _selectedWarehouseId = null;
     // Reset permissions to default employee
     _canViewSales = _canViewProducts = _canViewTiers = true;
-    _canViewPurchases = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canEditTiers = _canDeleteTiers = _canViewTransport = _canEditTransport = false;
+    _canViewPurchases = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canEditTiers = _canDeleteTiers = _canViewTransport = _canEditTransport = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = _canManagePayroll = _canImportExport = false;
     
     final service = context.read<FirestoreService>();
 
@@ -285,22 +325,22 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                       _selectedRole = val!;
                       // Pré-configuration par défaut selon le rôle
                       if (_selectedRole == UserRole.admin) {
-                        _canViewPurchases = _canViewSales = _canDeleteSales = _canViewProducts = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = true;
+                        _canViewPurchases = _canViewSales = _canDeleteSales = _canViewProducts = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = _canManagePayroll = _canImportExport = true;
                       } else if (_selectedRole == UserRole.storekeeper) {
-                        _canViewProducts = true;
-                        _canViewPurchases = _canViewSales = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = false;
+                        _canViewProducts = _canViewDeliveries = true;
+                        _canViewPurchases = _canViewSales = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = false;
                       } else if (_selectedRole == UserRole.technician) {
                         _canViewProducts = true;
-                        _canViewPurchases = _canViewSales = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = false;
+                        _canViewPurchases = _canViewSales = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = false;
                       } else if (_selectedRole == UserRole.tech_manager) {
                         _canViewSales = _canViewProducts = true;
-                        _canViewPurchases = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = false;
+                        _canViewPurchases = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = false;
                       } else if (_selectedRole == UserRole.manager) {
-                        _canViewPurchases = _canViewSales = _canViewProducts = _canEditProducts = _canViewTiers = _canEditTiers = true;
-                        _canDeleteSales = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canDeleteTiers = _canViewTransport = _canEditTransport = false;
+                        _canViewPurchases = _canViewSales = _canViewProducts = _canEditProducts = _canViewTiers = _canEditTiers = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = true;
+                        _canDeleteSales = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canDeleteTiers = _canViewTransport = _canEditTransport = _canViewAudit = false;
                       } else {
                         _canViewSales = _canViewProducts = _canViewTiers = true;
-                        _canViewPurchases = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canEditTiers = _canDeleteTiers = _canViewTransport = _canEditTransport = false;
+                        _canViewPurchases = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canEditTiers = _canDeleteTiers = _canViewTransport = _canEditTransport = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = false;
                       }
                     });
                   },
@@ -338,6 +378,15 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 _buildPermissionSwitch(setDialogState, 'Supprimer Tiers', _canDeleteTiers, (v) => _canDeleteTiers = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Transport', _canViewTransport, (v) => _canViewTransport = v),
                 _buildPermissionSwitch(setDialogState, 'Gérer Transport', _canEditTransport, (v) => _canEditTransport = v),
+                const Divider(),
+                const Text('Nouveaux Modules', style: TextStyle(fontWeight: FontWeight.bold)),
+                _buildPermissionSwitch(setDialogState, 'Voir Audit/Traçabilité', _canViewAudit, (v) => _canViewAudit = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Dépenses', _canViewExpenses, (v) => _canViewExpenses = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Avances', _canViewAdvances, (v) => _canViewAdvances = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Transferts Stock', _canViewTransfers, (v) => _canViewTransfers = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Relance Impayés', _canViewReminders, (v) => _canViewReminders = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Alertes Météo', _canViewWeather, (v) => _canViewWeather = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Livraisons (BL)', _canViewDeliveries, (v) => _canViewDeliveries = v),
               ],
             ),
           ),
@@ -369,6 +418,15 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                     canDeleteTiers: _canDeleteTiers,
                     canViewTransport: _canViewTransport,
                     canEditTransport: _canEditTransport,
+                    canViewAudit: _canViewAudit,
+                    canViewExpenses: _canViewExpenses,
+                    canViewAdvances: _canViewAdvances,
+                    canViewTransfers: _canViewTransfers,
+                    canViewReminders: _canViewReminders,
+                    canViewWeather: _canViewWeather,
+                    canViewDeliveries: _canViewDeliveries,
+                    canManagePayroll: _canManagePayroll,
+                    canImportExport: _canImportExport,
                   );
                   
                   Navigator.pop(context); // Fermer loader

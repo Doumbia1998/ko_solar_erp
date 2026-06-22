@@ -14,7 +14,8 @@ class JournalEntry {
   final String? tierName;
   final bool isReconciled;
   final DateTime? reconciliationDate;
-  final String? lettering; // Code de lettrage (ex: A, B, AA...)
+  final String? lettering;
+  final String createdBy;
 
   JournalEntry({
     required this.id,
@@ -31,6 +32,7 @@ class JournalEntry {
     this.isReconciled = false,
     this.reconciliationDate,
     this.lettering,
+    this.createdBy = '',
   });
 
   Map<String, dynamic> toMap() {
@@ -48,6 +50,7 @@ class JournalEntry {
       'isReconciled': isReconciled,
       'reconciliationDate': reconciliationDate != null ? Timestamp.fromDate(reconciliationDate!) : null,
       'lettering': lettering,
+      'createdBy': createdBy,
     };
   }
 
@@ -67,6 +70,7 @@ class JournalEntry {
       isReconciled: map['isReconciled'] ?? false,
       reconciliationDate: map['reconciliationDate'] != null ? (map['reconciliationDate'] as Timestamp).toDate() : null,
       lettering: map['lettering'],
+      createdBy: map['createdBy'] ?? '',
     );
   }
 }

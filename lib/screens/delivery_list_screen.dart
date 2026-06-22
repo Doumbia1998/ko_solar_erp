@@ -110,7 +110,14 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> with SingleTick
                   child: Icon(status == 'pending' ? Icons.local_shipping : Icons.check_circle, color: status == 'pending' ? Colors.orange : Colors.green),
                 ),
                 title: Text('BL-${t.invoiceNumber} | ${t.tierName.toUpperCase()}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text('Date: ${DateFormat('dd/MM/yyyy').format(t.date)}\nArticles: ${t.items.length}'),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Date: ${DateFormat('dd/MM/yyyy').format(t.date)}\nArticles: ${t.items.length}'),
+                    if (t.createdBy.isNotEmpty)
+                      Text('Fait par: ${t.createdBy}', style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.blueGrey)),
+                  ],
+                ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [

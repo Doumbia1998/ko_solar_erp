@@ -260,7 +260,21 @@ class _StockTransferScreenState extends State<StockTransferScreen> with SingleTi
                     child: ListTile(
                       leading: const CircleAvatar(backgroundColor: Colors.blueGrey, child: Icon(Icons.swap_horiz, color: Colors.white)),
                       title: Text('${t.productName.toUpperCase()} - Qté : ${t.quantity}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text('De : ${t.fromWarehouseName} ➔ Vers : ${t.toWarehouseName}\nDate : ${DateFormat('dd/MM/yyyy HH:mm').format(t.date)}'),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('De : ${t.fromWarehouseName} ➔ Vers : ${t.toWarehouseName}'),
+                          Row(
+                            children: [
+                              Text(DateFormat('dd/MM/yyyy HH:mm').format(t.date), style: const TextStyle(fontSize: 11)),
+                              if (t.createdBy.isNotEmpty) ...[
+                                const SizedBox(width: 10),
+                                Text('Fait par: ${t.createdBy}', style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.blueGrey)),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
                       trailing: IconButton(
                         icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
                         onPressed: () => PdfService.generateTransferBordereau(t),

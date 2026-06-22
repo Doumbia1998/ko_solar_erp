@@ -68,10 +68,8 @@ class _UnpaidReminderScreenState extends State<UnpaidReminderScreen> {
                     var pendingMaturities = <Map<String, dynamic>>[];
 
                     for (var t in allTxs) {
-                      // On ne prend que les factures avec une date d'échéance
                       if (t.dueDate == null) continue;
 
-                      // Filtrage par recherche
                       if (_searchQuery.isNotEmpty) {
                         if (!t.tierName.toLowerCase().contains(_searchQuery) &&
                             !t.invoiceNumber.toLowerCase().contains(_searchQuery)) {
@@ -79,18 +77,16 @@ class _UnpaidReminderScreenState extends State<UnpaidReminderScreen> {
                         }
                       }
 
-                      // Calcul du reste à payer réel pour cette facture précise
+                      // Calcul du reste à payer réel
                       double paidForThis = allPays
                           .where((p) => p.invoiceNumber == t.invoiceNumber || (p.reference.toUpperCase().contains(t.invoiceNumber.toUpperCase())))
                           .fold(0.0, (sum, p) => sum + p.amount);
 
-                      // On ajoute l'acompte initial s'il n'est pas déjà dans les paiements (sécurité doublon)
                       bool acompteInPay = allPays.any((p) => p.invoiceNumber == t.invoiceNumber && p.reference.contains('Acompte'));
                       if (!acompteInPay) paidForThis += t.amountPaid;
 
                       double reste = t.netToPay - paidForThis;
 
-                      // Si le reste est significatif, on l'affiche dans le module de relance
                       if (reste > 50) {
                         pendingMaturities.add({
                           'transaction': t,
@@ -112,7 +108,6 @@ class _UnpaidReminderScreenState extends State<UnpaidReminderScreen> {
                       );
                     }
 
-                    // Tri par date d'échéance (les plus urgentes en premier)
                     pendingMaturities.sort((a, b) => (a['transaction'] as AppTransaction).dueDate!.compareTo((b['transaction'] as AppTransaction).dueDate!));
 
                     return ListView.builder(
@@ -120,8 +115,8 @@ class _UnpaidReminderScreenState extends State<UnpaidReminderScreen> {
                       itemCount: pendingMaturities.length,
                       itemBuilder: (context, index) {
                         final d = pendingMaturities[index];
-                        final AppTransaction t = d['transaction'];
-                        final double reste = d['remaining'];
+                        final AppTransaction t = d['transaction'] as AppTransaction;
+                        final double reste = d['remaining'] as double;
 
                         final now = DateTime.now();
                         final diff = t.dueDate!.difference(now).inDays;
@@ -153,7 +148,7 @@ class _UnpaidReminderScreenState extends State<UnpaidReminderScreen> {
                                 Text('Facture : ${t.invoiceNumber}', style: const TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.bold)),
                                 Text('Échéance : ${DateFormat('dd/MM/yyyy').format(t.dueDate!)}',
                                   style: TextStyle(color: alertColor, fontWeight: FontWeight.bold)),
-                                Text('SOLDE RESTANT : ${_currency.format(reste)} F',
+                                Text('SOLDE RESTANT : ${_currency.format(reste).replaceAll(',', ' ')} F',
                                   style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w600)),
                               ],
                             ),
@@ -180,7 +175,7 @@ class _UnpaidReminderScreenState extends State<UnpaidReminderScreen> {
   void _sendReminder(AppTransaction t, double reste) async {
     final service = Provider.of<FirestoreService>(context, listen: false);
     final tiers = await service.getTiers(TierType.client).first;
-    final client = tiers.firstWhere((c) => c.id == t.tierId, orElse: () => Tier(id: '', name: t.tierName, type: TierType.client, phone: '', address: '', accountNumber: '', compteComptable: ''));
+    final client = tiers.firstWhere((c) => c.id == t.tierId, orElse: () => Tier(id: '', name: t.tierName, type: TierType.client, phone: '', address: '', compteGeneral: '', compteTiers: ''));
 
     if (client.phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Le client n\'a pas de numéro de téléphone enregistré.')));
@@ -193,7 +188,7 @@ class _UnpaidReminderScreenState extends State<UnpaidReminderScreen> {
     String message = "📢 *RELANCE PAIEMENT KO SOLAR*\n\n"
         "Cher client *${t.tierName.toUpperCase()}*,\n"
         "Sauf erreur de notre part, votre facture *${t.invoiceNumber}* dont l'échéance était le *${DateFormat('dd/MM/yy').format(t.dueDate!)}* n'a pas encore été totalement soldée.\n\n"
-        "🔹 Montant restant : *${_currency.format(reste)} FCFA*\n\n"
+        "🔹 Montant restant : *${_currency.format(reste).replaceAll(',', ' ')} FCFA*\n\n"
         "Nous vous prions de bien vouloir régulariser cette situation rapidement.\n"
         "Merci de votre confiance !\n*L'équipe KO SOLAR*";
 
@@ -219,11 +214,13 @@ class _UnpaidReminderScreenState extends State<UnpaidReminderScreen> {
                 builder: (context, snapshotPay) {
                   if (!snapshotTx.hasData || !snapshotPay.hasData) return const Center(child: CircularProgressIndicator());
 
-                  final allTxs = snapshotTx.data!.where((t) => t.dueDate != null).toList();
+                  final allTxs = snapshotTx.data!;
                   final allPays = snapshotPay.data!;
 
                   List<Map<String, dynamic>> honored = [];
                   for (var t in allTxs) {
+                    if (t.dueDate == null) continue;
+
                     final pays = allPays.where((p) => p.invoiceNumber == t.invoiceNumber || p.reference.contains(t.invoiceNumber)).toList();
                     double totalPaid = pays.fold(0.0, (sum, p) => sum + p.amount);
 
@@ -243,13 +240,13 @@ class _UnpaidReminderScreenState extends State<UnpaidReminderScreen> {
                     itemCount: honored.length,
                     itemBuilder: (context, index) {
                       final h = honored[index];
-                      final AppTransaction t = h['tx'];
-                      final DateTime pDate = h['payDate'];
+                      final AppTransaction t = h['tx'] as AppTransaction;
+                      final DateTime pDate = h['payDate'] as DateTime;
                       bool late = pDate.isAfter(t.dueDate!);
 
                       return ListTile(
                         leading: Icon(Icons.verified, color: late ? Colors.orange : Colors.green),
-                        title: Text(t.tierName.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold)),
+                        title: Text(t.tierName.toUpperCase()),
                         subtitle: Text('Facture : ${t.invoiceNumber}\nÉchéance : ${DateFormat('dd/MM/yy').format(t.dueDate!)}\nPayé le : ${DateFormat('dd/MM/yy').format(pDate)}'),
                         trailing: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

@@ -276,7 +276,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                 trip.expenses[index] = TripExpense(
                   label: labelController.text,
                   amount: double.tryParse(amountController.text) ?? 0,
-                  compteComptable: selectedAccount ?? '600000',
+                  compteComptable: selectedAccount ?? '60110000',
                   date: e.date,
                 );
                 await service.updateTrip(trip);
@@ -392,7 +392,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                 final e = TripExpense(
                   label: labelController.text,
                   amount: double.tryParse(amountController.text) ?? 0,
-                  compteComptable: selectedAccount ?? '600000',
+                  compteComptable: selectedAccount ?? '60110000',
                   date: DateTime.now(),
                 );
                 trip.expenses.add(e);

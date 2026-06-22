@@ -49,10 +49,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
   }
 
   String _formatAmount(double amount) {
-    return amount.toInt().toString().replaceAllMapped(
-      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), 
-      (Match m) => '${m[1]} '
-    );
+    return NumberFormat('#,###', 'fr_FR').format(amount.toInt()).replaceAll(',', ' ');
   }
 
   @override
@@ -258,8 +255,6 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                   },
                 ),
               ),
-              // --- SECTION TRACABILITÉ (BAS DE PAGE) ---
-              _buildAuditSection(firestoreService),
             ],
           ),
         ),
@@ -315,7 +310,15 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(t.tierName.toUpperCase(), style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w600, fontSize: 13)),
-                Text(DateFormat('dd/MM/yyyy HH:mm').format(t.date), style: const TextStyle(fontSize: 11)),
+                Row(
+                  children: [
+                    Text(DateFormat('dd/MM/yyyy HH:mm').format(t.date), style: const TextStyle(fontSize: 11)),
+                    if (t.createdBy.isNotEmpty) ...[
+                      const SizedBox(width: 10),
+                      Text('Fait par: ${t.createdBy}', style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.blueGrey)),
+                    ],
+                  ],
+                ),
                 if (t.dueDate != null && paidAmount < t.netToPay - 10)
                   Text('Échéance : ${DateFormat('dd/MM/yy').format(t.dueDate!)}', style: const TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.bold)),
               ],
@@ -365,6 +368,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
   Widget _buildActionButtons(AppTransaction t, FirestoreService firestoreService) {
     final isQuote = t.type == TransactionType.quote;
     final isAdminOrManager = _currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.manager;
+    final canDelete = isAdminOrManager || _currentUser?.canDeleteSales == true;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -391,7 +395,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
             tooltip: t.isPosted ? 'Déjà comptabilisé' : 'Transférer en Compta',
             onPressed: t.isPosted ? null : () => _transferToAccounting(context, firestoreService, t),
           ),
-        if (isAdminOrManager) IconButton(icon: const Icon(Icons.delete, color: Colors.red, size: 20), tooltip: 'Supprimer', onPressed: () => _confirmDelete(context, () => firestoreService.deleteTransaction(t.id))),
+        if (canDelete) IconButton(icon: const Icon(Icons.delete, color: Colors.red, size: 20), tooltip: 'Supprimer', onPressed: () => _confirmDelete(context, () => firestoreService.deleteTransaction(t.id, _currentUser?.displayName ?? 'Admin'))),
       ],
     );
   }
@@ -508,69 +512,5 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
   Future<void> _pickDateRange() async {
     final picked = await showDateRangePicker(context: context, firstDate: DateTime(2020), lastDate: DateTime.now().add(const Duration(days: 365)), initialDateRange: _selectedDateRange);
     if (picked != null) setState(() => _selectedDateRange = picked);
-  }
-
-  Widget _buildAuditSection(FirestoreService service) {
-    return Container(
-      height: 150,
-      margin: const EdgeInsets.only(top: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey.shade300, width: 2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                const Icon(Icons.history, size: 18, color: Colors.blueGrey),
-                const SizedBox(width: 8),
-                const Text('TRAÇABILITÉ RÉCENTE (VENTES/ACHATS)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.blueGrey)),
-                const Spacer(),
-                TextButton(
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => AuditLogsScreen())),
-                  child: const Text('VOIR TOUT', style: TextStyle(fontSize: 11)),
-                )
-              ],
-            ),
-          ),
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('audit_logs')
-                  .where('entity', isEqualTo: 'transactions')
-                  .orderBy('timestamp', descending: true)
-                  .limit(5)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) return const SizedBox();
-                final logs = snapshot.data!.docs;
-                return ListView.builder(
-                  padding: EdgeInsets.zero,
-                  itemCount: logs.length,
-                  itemBuilder: (context, index) {
-                    final log = logs[index].data() as Map<String, dynamic>;
-                    final ts = log['timestamp'] as Timestamp?;
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      child: Row(
-                        children: [
-                          Text(ts != null ? DateFormat('HH:mm').format(ts.toDate()) : '--', style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                          const SizedBox(width: 10),
-                          Expanded(child: Text(log['details'] ?? '', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
-                          Text('par ${log['userName']}', style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.blue)),
-                        ],
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }

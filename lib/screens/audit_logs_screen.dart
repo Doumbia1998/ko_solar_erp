@@ -61,6 +61,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
               stream: FirebaseFirestore.instance
                   .collection('audit_logs')
                   .orderBy('timestamp', descending: true)
+                  .limit(200) // On limite aux 200 derniers pour la performance
                   .snapshots(),
               builder: (context, snapshot) {
                 if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());

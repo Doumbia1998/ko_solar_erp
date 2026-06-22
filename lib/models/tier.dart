@@ -6,8 +6,8 @@ class Tier {
   final String phone;
   final String address;
   final TierType type;
-  final String accountNumber; // General account number (e.g., 41100000 or 40100000)
-  final String compteComptable; // Specific accounting account
+  final String compteGeneral; // ex: 41100000 (Général)
+  final String compteTiers; // ex: 411ABAZIZ (Spécifique Sage)
 
   Tier({
     required this.id,
@@ -15,8 +15,8 @@ class Tier {
     required this.phone,
     required this.address,
     required this.type,
-    required this.accountNumber,
-    required this.compteComptable,
+    required this.compteGeneral,
+    required this.compteTiers,
   });
 
   Map<String, dynamic> toMap() {
@@ -25,8 +25,8 @@ class Tier {
       'phone': phone,
       'address': address,
       'type': type.toString().split('.').last,
-      'accountNumber': accountNumber,
-      'compteComptable': compteComptable,
+      'compteGeneral': compteGeneral,
+      'compteTiers': compteTiers,
     };
   }
 
@@ -37,8 +37,8 @@ class Tier {
       phone: map['phone'] ?? '',
       address: map['address'] ?? '',
       type: map['type'] == 'supplier' ? TierType.supplier : TierType.client,
-      accountNumber: map['accountNumber'] ?? '',
-      compteComptable: map['compteComptable'] ?? '',
+      compteGeneral: map['compteGeneral'] ?? map['accountNumber'] ?? '',
+      compteTiers: map['compteTiers'] ?? map['compteComptable'] ?? '',
     );
   }
 }

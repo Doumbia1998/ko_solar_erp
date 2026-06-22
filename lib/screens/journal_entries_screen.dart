@@ -137,7 +137,15 @@ class JournalEntriesScreen extends StatelessWidget {
                                   ),
                               ],
                             )),
-                            DataCell(Text(e.label)),
+                            DataCell(Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(e.label),
+                                if (e.createdBy.isNotEmpty)
+                                  Text('Fait par: ${e.createdBy}', style: const TextStyle(fontSize: 9, fontStyle: FontStyle.italic, color: Colors.blueGrey)),
+                              ],
+                            )),
                             DataCell(Text(e.debit > 0 ? NumberFormat('#,###').format(e.debit) : '')),
                             DataCell(Text(e.credit > 0 ? NumberFormat('#,###').format(e.credit) : '')),
                             DataCell(Row(

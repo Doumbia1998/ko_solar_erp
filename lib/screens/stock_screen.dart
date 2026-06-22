@@ -6,6 +6,8 @@ import '../models/warehouse.dart';
 import 'product_form_screen.dart';
 import 'product_detail_screen.dart';
 import 'stock_transfer_screen.dart';
+import '../models/app_user.dart';
+import '../services/report_service.dart';
 
 class StockScreen extends StatefulWidget {
   final bool isSelectionMode;
@@ -21,24 +23,35 @@ class _StockScreenState extends State<StockScreen> {
   @override
   Widget build(BuildContext context) {
     final firestoreService = Provider.of<FirestoreService>(context);
+    final currentUser = Provider.of<AppUser?>(context);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('GESTION DES STOCKS'),
         backgroundColor: const Color(0xFF1A237E),
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.print_outlined),
+            tooltip: 'Inventaire',
+            onPressed: () => _showInventoryMenu(context, firestoreService),
+          ),
+        ],
       ),
       body: Center(
         child: Container(
           constraints: const BoxConstraints(maxWidth: 1000),
           child: StreamBuilder<List<Product>>(
             stream: firestoreService.getProducts(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+            builder: (context, productSnapshot) {
+              if (productSnapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
               
-              var products = snapshot.data ?? [];
+              var products = productSnapshot.data ?? [];
               if (_searchQuery.isNotEmpty) {
-                products = products.where((p) => p.name.toLowerCase().contains(_searchQuery)).toList();
+                products = products.where((p) =>
+                  p.name.toLowerCase().contains(_searchQuery) ||
+                  p.reference.toLowerCase().contains(_searchQuery)
+                ).toList();
               }
 
               return StreamBuilder<List<Warehouse>>(
@@ -46,33 +59,40 @@ class _StockScreenState extends State<StockScreen> {
                 builder: (context, warehouseSnapshot) {
                   final warehouses = warehouseSnapshot.data ?? [];
 
-                  return Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: TextField(
-                          onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
-                          decoration: InputDecoration(
-                            hintText: 'Rechercher un article...',
-                            prefixIcon: const Icon(Icons.search),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                            filled: true,
-                            fillColor: Colors.grey.shade50,
+                  return StreamBuilder<List<Map<String, dynamic>>>(
+                    stream: firestoreService.getAllStocks(),
+                    builder: (context, stockSnapshot) {
+                      final allStocks = stockSnapshot.data ?? [];
+
+                      return Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: TextField(
+                              onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
+                              decoration: InputDecoration(
+                                hintText: 'Rechercher un article...',
+                                prefixIcon: const Icon(Icons.search),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                filled: true,
+                                fillColor: Colors.grey.shade50,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      Expanded(
-                        child: ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          itemCount: products.length,
-                          itemBuilder: (context, index) {
-                            final product = products[index];
-                            
-                            return FutureBuilder<Map<String, int>>(
-                              future: _getProductStocks(firestoreService, product.id, warehouses),
-                              builder: (context, stockSnapshot) {
-                                final stockMap = stockSnapshot.data ?? {};
+                          Expanded(
+                            child: ListView.builder(
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              itemCount: products.length,
+                              itemBuilder: (context, index) {
+                                final product = products[index];
                                 
+                                Map<String, int> stockMap = {};
+                                for (var s in allStocks) {
+                                  if (s['productId'] == product.id) {
+                                    stockMap[s['warehouseId']] = (s['quantity'] as num?)?.toInt() ?? 0;
+                                  }
+                                }
+
                                 return Card(
                                   elevation: 2,
                                   margin: const EdgeInsets.only(bottom: 12),
@@ -83,7 +103,7 @@ class _StockScreenState extends State<StockScreen> {
                                       child: Text('${product.totalQuantity}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                     ),
                                     title: Text(product.name.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                    subtitle: Text('PU: ${product.sellingPrice} FCFA | ${product.category}', style: const TextStyle(fontSize: 12)),
+                                    subtitle: Text('Réf: ${product.reference} | PU: ${product.sellingPrice} FCFA', style: const TextStyle(fontSize: 12)),
                                     children: [
                                       Padding(
                                         padding: const EdgeInsets.all(12.0),
@@ -113,16 +133,22 @@ class _StockScreenState extends State<StockScreen> {
                                             Row(
                                               mainAxisAlignment: MainAxisAlignment.end,
                                               children: [
-                                                TextButton.icon(
-                                                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => ProductFormScreen(product: product))),
-                                                  icon: const Icon(Icons.edit, size: 16),
-                                                  label: const Text('Modifier'),
-                                                ),
+                                                if (currentUser?.canEditProducts == true || currentUser?.role == UserRole.admin)
+                                                  TextButton.icon(
+                                                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => ProductFormScreen(product: product))),
+                                                    icon: const Icon(Icons.edit, size: 16),
+                                                    label: const Text('Modifier'),
+                                                  ),
                                                 TextButton.icon(
                                                   onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => ProductDetailScreen(product: product))),
                                                   icon: const Icon(Icons.history, size: 16),
                                                   label: const Text('Détails'),
                                                 ),
+                                                if (currentUser?.canDeleteProducts == true || currentUser?.role == UserRole.admin)
+                                                  IconButton(
+                                                    icon: const Icon(Icons.delete, color: Colors.red, size: 18),
+                                                    onPressed: () => _confirmDelete(context, firestoreService, product),
+                                                  ),
                                                 if (widget.isSelectionMode)
                                                   ElevatedButton(
                                                     onPressed: () => Navigator.pop(context, product),
@@ -137,11 +163,11 @@ class _StockScreenState extends State<StockScreen> {
                                   ),
                                 );
                               },
-                            );
-                          },
-                        ),
-                      ),
-                    ],
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   );
                 },
               );
@@ -170,12 +196,77 @@ class _StockScreenState extends State<StockScreen> {
     );
   }
 
-  Future<Map<String, int>> _getProductStocks(FirestoreService service, String productId, List<Warehouse> warehouses) async {
-    Map<String, int> stockMap = {};
-    for (var w in warehouses) {
-      int qty = await service.getWarehouseStock(productId, w.id);
-      stockMap[w.id] = qty;
-    }
-    return stockMap;
+  void _showInventoryMenu(BuildContext context, FirestoreService service) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('TIRER L\'INVENTAIRE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1A237E))),
+            const SizedBox(height: 20),
+            ListTile(
+              leading: const Icon(Icons.edit_note, color: Colors.blue),
+              title: const Text('État Préparatoire'),
+              subtitle: const Text('Pour le comptage physique en magasin'),
+              onTap: () async {
+                Navigator.pop(context);
+                final products = await service.getProducts().first;
+                final warehouses = await service.getWarehouses().first;
+                final allStocks = await service.getAllStocks().first;
+                ReportService.generatePreparatoryInventory(products, warehouses, allStocks);
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.account_balance_wallet, color: Colors.green),
+              title: const Text('Livre d\'Inventaire'),
+              subtitle: const Text('Inventaire valorisé (CMUP)'),
+              onTap: () async {
+                Navigator.pop(context);
+                final products = await service.getProducts().first;
+                final warehouses = await service.getWarehouses().first;
+                final allStocks = await service.getAllStocks().first;
+                ReportService.generateInventoryBook(products, warehouses, allStocks);
+              },
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmDelete(BuildContext context, FirestoreService service, Product p) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Supprimer le produit ?'),
+        content: Text('Voulez-vous vraiment supprimer ${p.name} ?\nCette action est irréversible et échouera si le produit est lié à des factures.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('ANNULER')),
+          ElevatedButton(
+            onPressed: () async {
+              try {
+                await service.deleteProduct(p.id);
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Produit supprimé'), backgroundColor: Colors.green));
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: Colors.red));
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('SUPPRIMER', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 }

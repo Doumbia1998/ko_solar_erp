@@ -73,7 +73,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 15),
                 const Text(
-                  'KO SOLAR ERP',
+                  'K-O SOLAR',
                   style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 1.2),
                 ),
                 const SizedBox(height: 30),

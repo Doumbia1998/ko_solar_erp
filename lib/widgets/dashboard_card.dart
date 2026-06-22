@@ -27,7 +27,7 @@ class DashboardCard extends StatelessWidget {
             Icon(icon, size: 30, color: iconColor),
             const SizedBox(height: 10),
             Text(
-              value,
+              value.replaceAll(',', ' '),
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
             const SizedBox(height: 5),

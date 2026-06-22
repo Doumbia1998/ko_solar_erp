@@ -63,8 +63,8 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
               type: widget.type == TransactionType.sale ? TierType.client : TierType.supplier, 
               phone: '', 
               address: '',
-              accountNumber: '',
-              compteComptable: '',
+              compteGeneral: '',
+              compteTiers: '',
             ));
 
         final warehouses = await service.getWarehouses().first;
@@ -627,12 +627,27 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                               addTransport: _addTransport,
                             );
 
-                            if (widget.transaction == null) {
-                              await firestoreService.addTransaction(tx, user?.displayName ?? 'Inconnu');
-                            } else {
-                              await firestoreService.updateTransaction(tx, widget.transaction!);
+                            try {
+                              if (widget.transaction == null) {
+                                await firestoreService.addTransaction(tx, user?.displayName ?? 'Inconnu');
+                              } else {
+                                await firestoreService.updateTransaction(tx, widget.transaction!, user?.displayName ?? 'Admin');
+                              }
+                              if (mounted) Navigator.pop(context);
+                            } catch (e) {
+                              if (mounted) {
+                                showDialog(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text("Erreur de validation", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                                    content: Text(e.toString().replaceAll('Exception:', '').trim()),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.pop(context), child: const Text("RETOUR")),
+                                    ],
+                                  ),
+                                );
+                              }
                             }
-                            Navigator.pop(context);
                           },
                           style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                           child: Text(widget.transaction == null ? 'VALIDER ${typeTitle.toUpperCase()}' : 'MODIFIER ${typeTitle.toUpperCase()}', style: const TextStyle(fontWeight: FontWeight.bold)),

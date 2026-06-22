@@ -9,6 +9,15 @@ class AuthService {
 
   Stream<User?> get user => _auth.authStateChanges();
 
+  Stream<AppUser?> userProfile(String uid) {
+    return _db.collection('users').doc(uid).snapshots().map((snap) {
+      if (snap.exists) {
+        return AppUser.fromMap(snap.data()!);
+      }
+      return null;
+    });
+  }
+
   Future<AppUser?> getAppUser(String uid) async {
     try {
       var doc = await _db.collection('users').doc(uid).get();
@@ -73,6 +82,15 @@ class AuthService {
     bool canDeleteTiers = false,
     bool canViewTransport = false,
     bool canEditTransport = false,
+    bool canViewAudit = false,
+    bool canViewExpenses = false,
+    bool canViewAdvances = false,
+    bool canViewTransfers = false,
+    bool canViewReminders = false,
+    bool canViewWeather = false,
+    bool canViewDeliveries = false,
+    bool canManagePayroll = false,
+    bool canImportExport = false,
     String? warehouseId,
   }) async {
     // 1. Créer une instance secondaire pour ne pas déconnecter l'admin
@@ -107,6 +125,15 @@ class AuthService {
           canDeleteTiers: canDeleteTiers,
           canViewTransport: canViewTransport,
           canEditTransport: canEditTransport,
+          canViewAudit: canViewAudit,
+          canViewExpenses: canViewExpenses,
+          canViewAdvances: canViewAdvances,
+          canViewTransfers: canViewTransfers,
+          canViewReminders: canViewReminders,
+          canViewWeather: canViewWeather,
+          canViewDeliveries: canViewDeliveries,
+          canManagePayroll: canManagePayroll,
+          canImportExport: canImportExport,
         );
         await _db.collection('users').doc(credential.user!.uid).set(newUser.toMap());
       }

@@ -13,6 +13,11 @@ import '../models/daily_closing.dart';
 import '../models/app_user.dart';
 import '../models/task.dart';
 import '../models/journal_config.dart';
+import '../models/expense.dart';
+import '../models/payment_method_config.dart';
+import '../models/advance.dart';
+import '../models/salary_payment.dart';
+import '../models/fiscal_year.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -24,7 +29,15 @@ class FirestoreService {
     );
   }
 
-  // --- TRACEABILITÉ (AUDIT LOGS) ---
+  // --- TRACEABILITE (AUDIT LOGS) ---
+  Stream<List<Map<String, dynamic>>> getAuditLogs({int limit = 100}) {
+    return _db.collection('audit_logs')
+        .orderBy('timestamp', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map((snap) => snap.docs.map((doc) => doc.data()).toList());
+  }
+
   Future<void> logAction({
     required String action,
     required String entity,
@@ -40,6 +53,136 @@ class FirestoreService {
       'details': details,
       'timestamp': FieldValue.serverTimestamp(),
     });
+  }
+
+  // --- AVANCES CLIENTS ---
+  Stream<List<Advance>> getAdvances({String? tierId}) {
+    Query query = _db.collection('advances');
+    if (tierId != null) query = query.where('tierId', isEqualTo: tierId);
+    return query.orderBy('date', descending: true).snapshots().map((snap) =>
+        snap.docs.map((doc) => Advance.fromMap(doc.data() as Map<String, dynamic>, doc.id)).toList());
+  }
+
+  Future<void> addAdvance(Advance a) async {
+    DocumentReference ref = await _db.collection('advances').add(a.toMap());
+    await logAction(action: 'add_advance', entity: 'advances', entityId: ref.id, userName: a.createdBy, details: 'Avance de ${a.amount} F pour ${a.tierName}');
+  }
+
+  Future<void> deleteAdvance(String id, String userName) async {
+    await _db.collection('advances').doc(id).delete();
+    await logAction(action: 'delete_advance', entity: 'advances', entityId: id, userName: userName, details: 'Suppression avance ID: $id');
+  }
+
+  // --- PAIE (SALAIRES) ---
+  Stream<List<SalaryPayment>> getSalaryPayments({int limit = 50}) {
+    return _db.collection('salaries').orderBy('date', descending: true).limit(limit).snapshots().map((snap) =>
+        snap.docs.map((doc) => SalaryPayment.fromMap(doc.data() as Map<String, dynamic>, doc.id)).toList());
+  }
+
+  Future<void> addSalaryPayment(SalaryPayment s) async {
+    WriteBatch batch = _db.batch();
+    DocumentReference ref = _db.collection('salaries').doc();
+    batch.set(ref, s.toMap());
+
+    batch.set(_db.collection('journal').doc(), JournalEntry(
+      id: '', date: s.date, reference: 'PAIE-${DateFormat('MMyy').format(s.date)}',
+      journalCode: s.journalCode, label: 'Salaire ${s.month} : ${s.employeeName}',
+      accountCode: '66110000', accountLabel: 'Remuneration du personnel',
+      debit: s.amount, credit: 0, createdBy: s.createdBy
+    ).toMap());
+
+    String cashAccount = s.method.toLowerCase().contains('banque') || s.method.toLowerCase().contains('virement') ? '52110000' : '57110000';
+    batch.set(_db.collection('journal').doc(), JournalEntry(
+      id: '', date: s.date, reference: 'PAIE-${DateFormat('MMyy').format(s.date)}',
+      journalCode: s.journalCode, label: 'Contrepartie Salaire : ${s.employeeName}',
+      accountCode: cashAccount, accountLabel: 'Tresorerie',
+      debit: 0, credit: s.amount, createdBy: s.createdBy
+    ).toMap());
+
+    await batch.commit();
+    await logAction(action: 'add_salary', entity: 'salaries', entityId: ref.id, userName: s.createdBy, details: 'Paiement salaire ${s.month} pour ${s.employeeName}');
+  }
+
+  // --- EXERCICES COMPTABLES ---
+  Stream<List<FiscalYear>> getFiscalYears() {
+    return _db.collection('fiscal_years').orderBy('startDate', descending: true).snapshots().map((snap) =>
+        snap.docs.map((doc) => FiscalYear.fromMap(doc.data() as Map<String, dynamic>, doc.id)).toList());
+  }
+
+  Future<void> addFiscalYear(FiscalYear fy) async {
+    await _db.collection('fiscal_years').add(fy.toMap());
+    await logAction(action: 'add_fiscal_year', entity: 'fiscal_years', entityId: 'new', userName: fy.createdBy, details: 'Ouverture exercice ${fy.label}');
+  }
+
+  Future<void> closeFiscalYear(String id, String userName) async {
+    await _db.collection('fiscal_years').doc(id).update({'isClosed': true});
+    await logAction(action: 'close_fiscal_year', entity: 'fiscal_years', entityId: id, userName: userName, details: 'Cloture de l\'exercice');
+  }
+
+  // --- CONFIGURATION MODES REGLEMENT ---
+  Stream<List<PaymentMethodConfig>> getPaymentMethodConfigs() {
+    return _db.collection('payment_method_configs').snapshots().map((snap) =>
+        snap.docs.map((doc) => PaymentMethodConfig.fromMap(doc.data() as Map<String, dynamic>, doc.id)).toList());
+  }
+
+  Future<void> addPaymentMethodConfig(PaymentMethodConfig config) => _db.collection('payment_method_configs').add(config.toMap());
+  Future<void> deletePaymentMethodConfig(String id) => _db.collection('payment_method_configs').doc(id).delete();
+
+  // --- DEPENSES & FOND DE CAISSE ---
+  Stream<List<Expense>> getExpenses() {
+    return _db.collection('expenses').orderBy('date', descending: true).snapshots().map((snap) =>
+        snap.docs.map((doc) => Expense.fromMap(doc.data() as Map<String, dynamic>, doc.id)).toList());
+  }
+
+  Future<void> addCashFund(double amount, String journalCode, String label, String userName) async {
+    WriteBatch batch = _db.batch();
+    DocumentReference ref = _db.collection('expenses').doc();
+    final e = Expense(
+      id: '', date: DateTime.now(), label: 'ALIMENTATION CAISSE : $label',
+      amount: -amount, category: 'FOND_DE_CAISSE', accountCode: '57110000',
+      journalCode: journalCode, paymentMethod: 'Virement/Interne', createdBy: userName
+    );
+    batch.set(ref, e.toMap());
+    batch.set(_db.collection('journal').doc(), JournalEntry(
+      id: '', date: e.date, reference: 'FOND-${DateFormat('ddMMyy').format(e.date)}',
+      journalCode: journalCode, label: e.label, accountCode: '57110000', accountLabel: 'Caisse',
+      debit: amount, credit: 0, createdBy: userName
+    ).toMap());
+    await batch.commit();
+    await logAction(action: 'add_cash_fund', entity: 'expenses', entityId: ref.id, userName: userName, details: 'Alimentation caisse de $amount F');
+  }
+
+  Future<void> addExpense(Expense e) async {
+    WriteBatch batch = _db.batch();
+    DocumentReference ref = _db.collection('expenses').doc();
+    batch.set(ref, e.toMap());
+
+    batch.set(_db.collection('journal').doc(), JournalEntry(
+      id: '', date: e.date, reference: 'DEP-${DateFormat('ddMMyy').format(e.date)}',
+      journalCode: e.journalCode, label: 'Depense : ${e.label}',
+      accountCode: e.accountCode, accountLabel: 'Charges',
+      debit: e.amount, credit: 0, createdBy: e.createdBy,
+    ).toMap());
+
+    String cashAccount = '57110000';
+    if (e.paymentMethod.toLowerCase().contains('banque') || e.paymentMethod.toLowerCase().contains('cheque') || e.paymentMethod.toLowerCase().contains('virement')) {
+      cashAccount = '52110000';
+    }
+
+    batch.set(_db.collection('journal').doc(), JournalEntry(
+      id: '', date: e.date, reference: 'DEP-${DateFormat('ddMMyy').format(e.date)}',
+      journalCode: e.journalCode, label: 'Contrepartie Depense : ${e.label}',
+      accountCode: cashAccount, accountLabel: 'Tresorerie',
+      debit: 0, credit: e.amount, createdBy: e.createdBy,
+    ).toMap());
+
+    await batch.commit();
+    await logAction(action: 'add_expense', entity: 'expenses', entityId: ref.id, userName: e.createdBy, details: 'Depense de ${e.amount} F : ${e.label}');
+  }
+
+  Future<void> deleteExpense(String id, String userName) async {
+    await _db.collection('expenses').doc(id).delete();
+    await logAction(action: 'delete_expense', entity: 'expenses', entityId: id, userName: userName, details: 'Suppression depense ID: $id');
   }
 
   // --- CONFIGURATION JOURNAUX ---
@@ -92,9 +235,9 @@ class FirestoreService {
         snap.docs.map((doc) => AppUser.fromMap(doc.data() as Map<String, dynamic>)).toList());
   }
 
-  // --- COMPTABILITÉ (JOURNAL) ---
-  Stream<List<JournalEntry>> getJournalEntries() {
-    return _db.collection('journal').orderBy('date', descending: true).snapshots().map((snap) =>
+  // --- COMPTABILITE (JOURNAL) ---
+  Stream<List<JournalEntry>> getJournalEntries({int limit = 200}) {
+    return _db.collection('journal').orderBy('date', descending: true).limit(limit).snapshots().map((snap) =>
         snap.docs.map((doc) => JournalEntry.fromMap(doc.data() as Map<String, dynamic>, doc.id)).toList());
   }
 
@@ -123,26 +266,14 @@ class FirestoreService {
     WriteBatch batch = _db.batch();
     DocumentReference ref = _db.collection('stock_transfers').doc();
     batch.set(ref, t.toMap());
-
-    // ... reste du code stock ...
-
     await batch.commit();
-    await logAction(action: 'stock_transfer', entity: 'stock_transfers', entityId: ref.id, userName: t.createdBy, details: 'Transfert ${t.quantity} de ${t.productName} (${t.fromWarehouseName} -> ${t.toWarehouseName})');
+    await logAction(action: 'stock_transfer', entity: 'stock_transfers', entityId: ref.id, userName: t.createdBy, details: 'Transfert ${t.quantity} de ${t.productName}');
   }
 
   Future<int> getWarehouseStock(String productId, String warehouseId) async {
     final stockDoc = await _db.collection('stocks').doc('${warehouseId}_${productId}').get();
     if (stockDoc.exists) {
       return (stockDoc.data()?['quantity'] as num?)?.toInt() ?? 0;
-    }
-    final warehouseDoc = await _db.collection('warehouses').doc(warehouseId).get();
-    String wName = warehouseDoc.data()?['name']?.toString().toLowerCase() ?? '';
-    if (wName.contains('principal')) {
-      final allAllocated = await _db.collection('stocks').where('productId', isEqualTo: productId).get();
-      if (allAllocated.docs.isEmpty) {
-        final productDoc = await _db.collection('products').doc(productId).get();
-        return (productDoc.data()?['totalQuantity'] as num?)?.toInt() ?? 0;
-      }
     }
     return 0;
   }
@@ -169,9 +300,7 @@ class FirestoreService {
       final items = (doc.data()['items'] as List?) ?? [];
       return items.any((item) => item['productId'] == id);
     });
-    if (hasTx) throw Exception("Impossible de supprimer : cet article est présent dans des factures d'achat ou de vente.");
-    final transferSnap = await _db.collection('stock_transfers').where('productId', isEqualTo: id).get();
-    if (transferSnap.docs.isNotEmpty) throw Exception("Impossible de supprimer : cet article a un historique de transferts.");
+    if (hasTx) throw Exception("Impossible de supprimer : cet article est present dans des factures d'achat ou de vente.");
     return _db.collection('products').doc(id).delete();
   }
 
@@ -187,13 +316,22 @@ class FirestoreService {
   Future<void> updateTier(Tier t) => _db.collection('tiers').doc(t.id).update(t.toMap());
   Future<void> deleteTier(String id) => _db.collection('tiers').doc(id).delete();
 
+  // --- STOCKS ---
+  Stream<List<Map<String, dynamic>>> getAllStocks() {
+    return _db.collection('stocks').snapshots().map((snap) =>
+        snap.docs.map((doc) => doc.data() as Map<String, dynamic>).toList());
+  }
+
   // --- TRANSACTIONS ---
-  Stream<List<AppTransaction>> getTransactions({TransactionType? type}) {
-    return _db.collection('transactions').snapshots().map((snap) {
-      var list = snap.docs.map((doc) => AppTransaction.fromMap(doc.data() as Map<String, dynamic>, doc.id)).toList();
-      if (type != null) list = list.where((t) => t.type == type).toList();
-      list.sort((a, b) => b.date.compareTo(a.date));
-      return list;
+  Stream<List<AppTransaction>> getTransactions({TransactionType? type, int? limit}) {
+    Query query = _db.collection('transactions');
+    if (type != null) query = query.where('type', isEqualTo: type.toString().split('.').last);
+
+    query = query.orderBy('date', descending: true);
+    if (limit != null) query = query.limit(limit);
+
+    return query.snapshots().map((snap) {
+      return snap.docs.map((doc) => AppTransaction.fromMap(doc.data() as Map<String, dynamic>, doc.id)).toList();
     });
   }
 
@@ -206,16 +344,45 @@ class FirestoreService {
 
     if (t.type == TransactionType.quote) return batch.commit();
 
-    // 1. Mise à jour du stock
+    // 0. Verification du stock par depot pour les ventes
+    if (t.type == TransactionType.sale) {
+      for (var item in t.items) {
+        final stockDoc = await _db.collection('stocks').doc('${t.warehouseId}_${item.productId}').get();
+        int warehouseStock = (stockDoc.data()?['quantity'] as num?)?.toInt() ?? 0;
+
+        if (warehouseStock < item.quantity) {
+          throw Exception('Stock insuffisant dans ce depot pour ${item.productName} ($warehouseStock disponible)');
+        }
+      }
+    }
+
+    // 1. Mise a jour du stock et CMUP
     for (var item in t.items) {
       DocumentReference pRef = _db.collection('products').doc(item.productId);
 
+      final pDoc = await pRef.get();
+      if (!pDoc.exists) continue;
+      final pData = pDoc.data() as Map<String, dynamic>;
+
       int change;
-      // Vente ou Retour Achat = Diminution de stock
       if (t.type == TransactionType.sale || t.type == TransactionType.purchaseReturn) {
         change = -item.quantity;
-      } else { // Achat ou Retour Vente = Augmentation de stock
+      } else {
         change = item.quantity;
+
+        if (t.type == TransactionType.purchase) {
+          double stockActuel = (pData['totalQuantity'] as num?)?.toDouble() ?? 0;
+          double cmupActuel = (pData['weightedAverageCost'] as num?)?.toDouble() ?? (pData['purchasePrice'] as num?)?.toDouble() ?? 0;
+
+          double nouvelleQty = stockActuel + item.quantity;
+          double nouvelleValeur = (stockActuel * cmupActuel) + (item.quantity * item.unitPrice);
+
+          double nouveauCmup = nouvelleQty > 0 ? nouvelleValeur / nouvelleQty : item.unitPrice;
+          batch.update(pRef, {
+            'weightedAverageCost': nouveauCmup,
+            'purchasePrice': item.unitPrice
+          });
+        }
       }
 
       batch.update(pRef, {'totalQuantity': FieldValue.increment(change)});
@@ -228,13 +395,12 @@ class FirestoreService {
       }, SetOptions(merge: true));
     }
 
-    // 2. Écritures Comptables
+    // 2. Ecritures Comptables
     final String journal = (t.type == TransactionType.sale || t.type == TransactionType.saleReturn) ? 'VEN' : 'ACH';
 
-    // Comptes par défaut
-    String tierAccount = (t.type == TransactionType.sale || t.type == TransactionType.saleReturn) ? '411100' : '401100';
+    String tierAccount = (t.type == TransactionType.sale || t.type == TransactionType.saleReturn) ? '41110000' : '40110000';
     String tierLabel = (t.type == TransactionType.sale || t.type == TransactionType.saleReturn) ? 'Clients' : 'Fournisseurs';
-    String htAccount = (t.type == TransactionType.sale || t.type == TransactionType.saleReturn) ? '701100' : '601100';
+    String htAccount = (t.type == TransactionType.sale || t.type == TransactionType.saleReturn) ? '70110000' : '60110000';
     String htLabel = (t.type == TransactionType.sale || t.type == TransactionType.saleReturn) ? 'Ventes' : 'Achats';
 
     if (t.items.isNotEmpty) {
@@ -242,16 +408,15 @@ class FirestoreService {
       if (pDoc.exists) {
         final pData = pDoc.data()!;
         if (t.type == TransactionType.sale || t.type == TransactionType.saleReturn) {
-          htAccount = pData['compteVente'] ?? '701100';
+          htAccount = pData['compteVente'] ?? '70110000';
         } else {
-          htAccount = pData['compteAchat'] ?? '601100';
+          htAccount = pData['compteAchat'] ?? '60110000';
         }
       }
     }
 
-    double amount = (t.totalHT).abs(); // On utilise la valeur absolue car netToPay gère déjà le signe pour le solde
+    double amount = (t.totalHT).abs();
 
-    // Logique Débit/Crédit selon le type
     double tierDebit = 0, tierCredit = 0, htDebit = 0, htCredit = 0;
 
     if (t.type == TransactionType.sale) {
@@ -270,6 +435,7 @@ class FirestoreService {
       accountCode: tierAccount, accountLabel: tierLabel,
       debit: tierDebit, credit: tierCredit,
       tierId: t.tierId, tierName: t.tierName,
+      createdBy: userName,
     ).toMap());
 
     batch.set(_db.collection('journal').doc(), JournalEntry(
@@ -277,11 +443,14 @@ class FirestoreService {
       label: '${_getTypeLabel(t.type)} - ${t.tierName}',
       accountCode: htAccount, accountLabel: htLabel,
       debit: htDebit, credit: htCredit,
+      createdBy: userName,
     ).toMap());
 
-    // 3. Gestion de l'Acompte (seulement pour factures normales)
+    // 3. Gestion de l'Acompte
     if (t.amountPaid > 0 && (t.type == TransactionType.sale || t.type == TransactionType.purchase)) {
-      batch.set(_db.collection('payments').doc(), {
+      DocumentReference pRef = _db.collection('payments').doc();
+      batch.set(pRef, {
+        'id': pRef.id,
         'tierId': t.tierId, 'tierName': t.tierName,
         'tierType': t.type == TransactionType.sale ? 'client' : 'supplier',
         'amount': t.amountPaid, 'date': Timestamp.fromDate(t.date),
@@ -289,28 +458,73 @@ class FirestoreService {
         'invoiceNumber': t.invoiceNumber, 'createdBy': userName,
       });
 
-      final String cashAccount = t.paymentMethod == 'Espèces' ? '571100' : '521100';
-      final String cashLabel = t.paymentMethod == 'Espèces' ? 'Caisse' : 'Banque';
+      final String cashAccount = t.paymentMethod == 'Especes' ? '57110000' : '52110000';
+      final String cashLabel = t.paymentMethod == 'Especes' ? 'Caisse' : 'Banque';
 
       batch.set(_db.collection('journal').doc(), JournalEntry(
-        id: '', date: t.date, reference: t.invoiceNumber, journalCode: t.paymentMethod == 'Espèces' ? 'CAI' : 'BQ',
-        label: 'Règlement Acompte - ${t.tierName}',
+        id: '', date: t.date, reference: t.invoiceNumber, journalCode: t.paymentMethod == 'Especes' ? 'CAI' : 'BQ',
+        label: 'Reglement Acompte - ${t.tierName}',
         accountCode: cashAccount, accountLabel: cashLabel,
         debit: t.type == TransactionType.sale ? t.amountPaid : 0,
         credit: t.type == TransactionType.sale ? 0 : t.amountPaid,
+        createdBy: userName,
       ).toMap());
 
       batch.set(_db.collection('journal').doc(), JournalEntry(
-        id: '', date: t.date, reference: t.invoiceNumber, journalCode: t.paymentMethod == 'Espèces' ? 'CAI' : 'BQ',
+        id: '', date: t.date, reference: t.invoiceNumber, journalCode: t.paymentMethod == 'Especes' ? 'CAI' : 'BQ',
         label: 'Contrepartie Acompte - ${t.tierName}',
         accountCode: tierAccount, accountLabel: tierLabel,
         debit: t.type == TransactionType.sale ? 0 : t.amountPaid,
         credit: t.type == TransactionType.sale ? t.amountPaid : 0,
+        createdBy: userName,
       ).toMap());
     }
 
     await batch.commit();
     await logAction(action: 'add_transaction', entity: 'transactions', entityId: ref.id, userName: userName, details: 'Facture ${t.invoiceNumber} (${t.type}) pour ${t.tierName}');
+
+    // --- LOGIQUE AUTOMATIQUE DES AVANCES ---
+    if (t.type == TransactionType.sale) {
+      final advancesSnap = await _db.collection('advances')
+          .where('tierId', isEqualTo: t.tierId)
+          .where('isUsed', isEqualTo: false)
+          .get();
+
+      if (advancesSnap.docs.isNotEmpty) {
+        WriteBatch advBatch = _db.batch();
+        double remainingToPay = t.netToPay - t.amountPaid;
+
+        for (var doc in advancesSnap.docs) {
+          if (remainingToPay <= 50) break;
+
+          final advData = doc.data();
+          double advAmount = (advData['amount'] ?? 0).toDouble();
+          double amountToApply = advAmount > remainingToPay ? remainingToPay : advAmount;
+
+          advBatch.update(doc.reference, {
+            'isUsed': true,
+            'usedInInvoice': t.invoiceNumber,
+          });
+
+          DocumentReference pRef = _db.collection('payments').doc();
+          advBatch.set(pRef, {
+            'id': pRef.id,
+            'tierId': t.tierId,
+            'tierName': t.tierName,
+            'tierType': 'client',
+            'amount': amountToApply,
+            'date': Timestamp.fromDate(DateTime.now()),
+            'method': 'Utilisation Avance',
+            'reference': 'AVANCE-${t.invoiceNumber}',
+            'invoiceNumber': t.invoiceNumber,
+            'createdBy': 'SYSTEME',
+          });
+
+          remainingToPay -= amountToApply;
+        }
+        await advBatch.commit();
+      }
+    }
   }
 
   String _getTypeLabel(TransactionType type) {
@@ -323,48 +537,37 @@ class FirestoreService {
     }
   }
 
-  Future<void> updateTransaction(AppTransaction newTx, AppTransaction oldTx) async {
+  Future<void> updateTransaction(AppTransaction newTx, AppTransaction oldTx, String userName) async {
     WriteBatch batch = _db.batch();
-    // Annulation ancien stock
-    for (var item in oldTx.items) {
-      DocumentReference pRef = _db.collection('products').doc(item.productId);
-      int reverseChange;
-      if (oldTx.type == TransactionType.sale || oldTx.type == TransactionType.purchaseReturn) {
-        reverseChange = item.quantity;
-      } else {
-        reverseChange = -item.quantity;
-      }
-      batch.update(pRef, {'totalQuantity': FieldValue.increment(reverseChange)});
-      DocumentReference sRef = _db.collection('stocks').doc('${oldTx.warehouseId}_${item.productId}');
-      batch.set(sRef, {'quantity': FieldValue.increment(reverseChange)}, SetOptions(merge: true));
-    }
-    // Application nouveau stock
-    for (var item in newTx.items) {
-      DocumentReference pRef = _db.collection('products').doc(item.productId);
-      int change;
-      if (newTx.type == TransactionType.sale || newTx.type == TransactionType.purchaseReturn) {
-        change = -item.quantity;
-      } else {
-        change = item.quantity;
-      }
-      batch.update(pRef, {'totalQuantity': FieldValue.increment(change)});
-      DocumentReference sRef = _db.collection('stocks').doc('${newTx.warehouseId}_${item.productId}');
-      batch.set(sRef, {'warehouseId': newTx.warehouseId, 'productId': item.productId, 'quantity': FieldValue.increment(change)}, SetOptions(merge: true));
-    }
-    // Nettoyage compta et enregistrement
     final journals = await _db.collection('journal').where('reference', isEqualTo: oldTx.invoiceNumber).get();
     for (var doc in journals.docs) batch.delete(doc.reference);
 
+    final payments = await _db.collection('payments').where('invoiceNumber', isEqualTo: oldTx.invoiceNumber).get();
+    for (var doc in payments.docs) batch.delete(doc.reference);
+
     batch.update(_db.collection('transactions').doc(newTx.id), newTx.toMap());
+
+    if (newTx.amountPaid > 0 && (newTx.type == TransactionType.sale || newTx.type == TransactionType.purchase)) {
+      DocumentReference pRef = _db.collection('payments').doc();
+      batch.set(pRef, {
+        'id': pRef.id,
+        'tierId': newTx.tierId, 'tierName': newTx.tierName,
+        'tierType': newTx.type == TransactionType.sale ? 'client' : 'supplier',
+        'amount': newTx.amountPaid, 'date': Timestamp.fromDate(newTx.date),
+        'method': newTx.paymentMethod, 'reference': 'Acompte ${newTx.invoiceNumber}',
+        'invoiceNumber': newTx.invoiceNumber, 'createdBy': userName,
+      });
+    }
+
     await batch.commit();
-    await logAction(action: 'update_transaction', entity: 'transactions', entityId: newTx.id, userName: 'User', details: 'Modif. Facture ${newTx.invoiceNumber}');
+    await logAction(action: 'update_transaction', entity: 'transactions', entityId: newTx.id, userName: userName, details: 'Modif. Facture ${newTx.invoiceNumber}');
   }
 
-  Future<void> deleteTransaction(String id) async {
+  Future<void> deleteTransaction(String id, String userName) async {
     final txDoc = await _db.collection('transactions').doc(id).get();
     if (!txDoc.exists) return;
     final txData = txDoc.data()!;
-    if (txData['isPosted'] == true) throw Exception("Facture déjà comptabilisée.");
+    if (txData['isPosted'] == true) throw Exception("Facture deja comptabilisee.");
     final tx = AppTransaction.fromMap(txData, id);
     WriteBatch batch = _db.batch();
     for (var item in tx.items) {
@@ -381,9 +584,13 @@ class FirestoreService {
     }
     final journals = await _db.collection('journal').where('reference', isEqualTo: tx.invoiceNumber).get();
     for (var doc in journals.docs) batch.delete(doc.reference);
+
+    final payments = await _db.collection('payments').where('invoiceNumber', isEqualTo: tx.invoiceNumber).get();
+    for (var doc in payments.docs) batch.delete(doc.reference);
+
     batch.delete(_db.collection('transactions').doc(id));
     await batch.commit();
-    await logAction(action: 'delete_transaction', entity: 'transactions', entityId: id, userName: 'User', details: 'Suppression Facture ${tx.invoiceNumber}');
+    await logAction(action: 'delete_transaction', entity: 'transactions', entityId: id, userName: userName, details: 'Suppression Facture ${tx.invoiceNumber}');
   }
 
   // --- TRANSPORT ---
@@ -411,7 +618,7 @@ class FirestoreService {
   Future<void> updateTrip(Trip t) => _db.collection('trips').doc(t.id).update(t.toMap());
   Future<void> deleteTrip(String id) => _db.collection('trips').doc(id).delete();
 
-  // --- RÈGLEMENTS ---
+  // --- REGLEMENTS ---
   Stream<List<Payment>> getPayments({String? tierId}) {
     return _db.collection('payments').snapshots().map((snap) {
       var list = snap.docs.map((doc) => Payment.fromMap(doc.data() as Map<String, dynamic>, doc.id)).toList();
@@ -424,19 +631,24 @@ class FirestoreService {
     Map<String, dynamic> data = p.toMap();
     data['createdBy'] = userName;
     DocumentReference ref = await _db.collection('payments').add(data);
-    await logAction(action: 'add_payment', entity: 'payments', entityId: ref.id, userName: userName, details: 'Règlement de ${p.amount} F pour ${p.tierName}');
+    await logAction(action: 'add_payment', entity: 'payments', entityId: ref.id, userName: userName, details: 'Reglement de ${p.amount} F pour ${p.tierName}');
   }
-  Future<void> deletePayment(String id) async {
+  Future<void> deletePayment(String id, String userName) async {
     final doc = await _db.collection('payments').doc(id).get();
+    if (!doc.exists) return;
+    final pData = doc.data() as Map<String, dynamic>;
+    final amount = pData['amount'] ?? 0;
+    final tier = pData['tierName'] ?? '';
+
     await _db.collection('payments').doc(id).delete();
-    await logAction(action: 'delete_payment', entity: 'payments', entityId: id, userName: 'User', details: 'Suppression règlement ID: $id');
+    await logAction(action: 'delete_payment', entity: 'payments', entityId: id, userName: userName, details: 'Suppression reglement de $amount F ($tier)');
   }
 
   Future<void> updatePaymentJournal(String paymentId, String journalCode) {
     return _db.collection('payments').doc(paymentId).update({'journalCode': journalCode});
   }
 
-  // --- DÉPÔTS ---
+  // --- DEPOTS ---
   Stream<List<Warehouse>> getWarehouses() {
     return _db.collection('warehouses').snapshots().map((snap) =>
         snap.docs.map((doc) => Warehouse.fromMap(doc.data() as Map<String, dynamic>, doc.id)).toList());
@@ -465,7 +677,7 @@ class FirestoreService {
       tierId: quote.tierId, tierName: quote.tierName,
       type: TransactionType.sale, items: quote.items,
       totalHT: quote.totalHT, amountPaid: 0,
-      paymentMethod: 'Espèces', warehouseId: quote.warehouseId,
+      paymentMethod: 'Especes', warehouseId: quote.warehouseId,
       destination: quote.destination, transportFees: quote.transportFees,
       addTransport: quote.addTransport, createdBy: userName,
     );
@@ -479,15 +691,17 @@ class FirestoreService {
     }
     batch.set(_db.collection('journal').doc(), JournalEntry(
       id: '', date: sale.date, reference: sale.invoiceNumber, journalCode: 'VEN',
-      label: 'Vente (ex-Devis) - ${sale.tierName}', accountCode: '411100', accountLabel: 'Clients',
+      label: 'Vente (ex-Devis) - ${sale.tierName}', accountCode: '41110000', accountLabel: 'Clients',
       debit: sale.totalHT, credit: 0, tierId: sale.tierId, tierName: sale.tierName,
     ).toMap());
     batch.set(_db.collection('journal').doc(), JournalEntry(
       id: '', date: sale.date, reference: sale.invoiceNumber, journalCode: 'VEN',
-      label: 'Vente (ex-Devis) - ${sale.tierName}', accountCode: '701100', accountLabel: 'Ventes',
+      label: 'Vente (ex-Devis) - ${sale.tierName}', accountCode: '70110000', accountLabel: 'Ventes',
       debit: 0, credit: sale.totalHT,
+      createdBy: userName,
     ).toMap());
     await batch.commit();
+    await logAction(action: 'convert_quote', entity: 'transactions', entityId: sale.id, userName: userName, details: 'Devis ${quote.invoiceNumber} -> Facture ${sale.invoiceNumber}');
   }
     
   Future<void> updatePaymentStatus(String id, bool isPosted) => _db.collection('payments').doc(id).update({'isPosted': isPosted});
@@ -495,24 +709,19 @@ class FirestoreService {
   Future<void> syncManagementToAccounting() async {
     final txsSnap = await _db.collection('transactions').get();
     final paysSnap = await _db.collection('payments').get();
-    final journalSnap = await _db.collection('journal').get();
+    final expensesSnap = await _db.collection('expenses').get();
+
     final List<AppTransaction> transactions = txsSnap.docs.map((d) => AppTransaction.fromMap(d.data(), d.id)).toList();
     final List<Payment> payments = paysSnap.docs.map((d) => Payment.fromMap(d.data(), d.id)).toList();
-    final List<String> existingRefs = journalSnap.docs.map((d) => (d.data()['reference'] as String)).toList();
+    final List<Expense> expenses = expensesSnap.docs.map((d) => Expense.fromMap(d.data(), d.id)).toList();
+
     WriteBatch batch = _db.batch();
-    for (var t in transactions) {
-      if (!existingRefs.contains(t.invoiceNumber)) {
-        batch.set(_db.collection('journal').doc(), JournalEntry(id: '', date: t.date, reference: t.invoiceNumber, journalCode: t.type == TransactionType.sale ? 'VEN' : 'ACH', label: 'Vente/Achat - ${t.tierName}', accountCode: t.type == TransactionType.sale ? '411100' : '401100', accountLabel: 'Tiers', debit: t.type == TransactionType.sale ? t.totalHT : 0, credit: t.type == TransactionType.sale ? 0 : t.totalHT, tierId: t.tierId, tierName: t.tierName).toMap());
-        batch.set(_db.collection('journal').doc(), JournalEntry(id: '', date: t.date, reference: t.invoiceNumber, journalCode: t.type == TransactionType.sale ? 'VEN' : 'ACH', label: 'Vente/Achat - ${t.tierName}', accountCode: t.type == TransactionType.sale ? '701100' : '601100', accountLabel: 'HT', debit: t.type == TransactionType.sale ? 0 : t.totalHT, credit: t.type == TransactionType.sale ? t.totalHT : 0).toMap());
-      }
-    }
-    for (var p in payments) {
-      String payRef = p.reference.isEmpty ? 'PAY-${p.id.substring(0,5)}' : p.reference;
-      if (!existingRefs.contains(payRef)) {
-        String journal = p.journalCode ?? 'BQ';
-        batch.set(_db.collection('journal').doc(), JournalEntry(id: '', date: p.date, reference: payRef, journalCode: journal, label: 'Règlement ${p.tierName}', accountCode: '521100', accountLabel: 'Banque', debit: p.tierType == TierType.client ? p.amount : 0, credit: p.tierType == TierType.client ? 0 : p.amount).toMap());
-        batch.set(_db.collection('journal').doc(), JournalEntry(id: '', date: p.date, reference: payRef, journalCode: journal, label: 'Contrepartie ${p.tierName}', accountCode: p.tierType == TierType.client ? '411100' : '401100', accountLabel: 'Tiers', debit: p.tierType == TierType.client ? 0 : p.amount, credit: p.tierType == TierType.client ? p.amount : 0, tierId: p.tierId, tierName: p.tierName).toMap());
-      }
+
+    for (var e in expenses) {
+      String expRef = 'DEP-${DateFormat('ddMMyy').format(e.date)}';
+      batch.set(_db.collection('journal').doc(), JournalEntry(id: '', date: e.date, reference: expRef, journalCode: e.journalCode, label: 'Depense : ${e.label}', accountCode: e.accountCode, accountLabel: 'Charges', debit: e.amount, credit: 0, createdBy: e.createdBy).toMap());
+      String cashAccount = e.paymentMethod.toLowerCase().contains('banque') ? '52110000' : '57110000';
+      batch.set(_db.collection('journal').doc(), JournalEntry(id: '', date: e.date, reference: expRef, journalCode: e.journalCode, label: 'Contrepartie Depense : ${e.label}', accountCode: cashAccount, accountLabel: 'Tresorerie', debit: 0, credit: e.amount, createdBy: e.createdBy).toMap());
     }
     await batch.commit();
   }
@@ -538,28 +747,12 @@ class FirestoreService {
     final transType = tierType == TierType.client ? TransactionType.sale : TransactionType.purchase;
     final allTxsSnap = await _db.collection('transactions').where('type', isEqualTo: transType.toString().split('.').last).get();
     final allPaysSnap = await _db.collection('payments').where('tierType', isEqualTo: tierType == TierType.client ? 'client' : 'supplier').get();
-    final allJournalSnap = await _db.collection('journal').where('accountCode', isEqualTo: tierType == TierType.client ? '411100' : '401100').get();
     List<AppTransaction> allTxs = allTxsSnap.docs.map((d) => AppTransaction.fromMap(d.data(), d.id)).toList();
     List<Payment> allPays = allPaysSnap.docs.map((d) => Payment.fromMap(d.data(), d.id)).toList();
-    List<JournalEntry> allJournal = allJournalSnap.docs.map((d) => JournalEntry.fromMap(d.data(), d.id)).toList();
     allTxs.sort((a, b) => a.date.compareTo(b.date));
     Map<String, double> creditsByTier = {};
     for (var p in allPays) creditsByTier[p.tierId] = (creditsByTier[p.tierId] ?? 0) + p.amount;
-    for (var j in allJournal) {
-      if (j.tierId != null) {
-        double amount = tierType == TierType.client ? j.credit : j.debit;
-        if (amount > 0) {
-          bool alreadyCounted = allPays.any((p) => p.invoiceNumber == j.reference || p.reference.contains(j.reference));
-          if (!alreadyCounted) creditsByTier[j.tierId!] = (creditsByTier[j.tierId!] ?? 0) + amount;
-        }
-      }
-    }
-    for (var t in allTxs) {
-      if (t.amountPaid > 0) {
-        bool dejaCompte = allPays.any((p) => p.invoiceNumber == t.invoiceNumber || p.reference.contains(t.invoiceNumber)) || allJournal.any((j) => j.reference == t.invoiceNumber);
-        if (!dejaCompte) creditsByTier[t.tierId] = (creditsByTier[t.tierId] ?? 0) + t.amountPaid;
-      }
-    }
+
     List<Map<String, dynamic>> results = [];
     Map<String, double> remainingCredits = Map.from(creditsByTier);
     for (var t in allTxs) {

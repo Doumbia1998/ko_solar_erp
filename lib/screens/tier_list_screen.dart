@@ -127,7 +127,7 @@ class _TierListScreenState extends State<TierListScreen> {
                                       return ListTile(
                                         leading: const Icon(Icons.person, color: Color(0xFF1A237E)),
                                         title: Text(tier.name.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold)),
-                                        subtitle: Text(tier.phone.isEmpty ? 'Pas de numéro' : tier.phone),
+                                        subtitle: Text('${tier.compteTiers} | ${tier.phone.isEmpty ? 'Pas de numéro' : tier.phone}'),
                                         trailing: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [

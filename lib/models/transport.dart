@@ -87,7 +87,7 @@ class TripExpense {
   factory TripExpense.fromMap(Map<String, dynamic> map) => TripExpense(
     label: map['label'] ?? '',
     amount: (map['amount'] ?? 0).toDouble(),
-    compteComptable: map['compteComptable'] ?? '60000000',
+    compteComptable: map['compteComptable'] ?? '60110000',
     date: map['date'] != null ? (map['date'] as Timestamp).toDate() : DateTime.now(),
   );
 }

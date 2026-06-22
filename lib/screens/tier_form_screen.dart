@@ -17,8 +17,8 @@ class _TierFormScreenState extends State<TierFormScreen> {
   late TextEditingController _nameController;
   late TextEditingController _phoneController;
   late TextEditingController _addressController;
-  late TextEditingController _compteComptableController;
-  late String _accountNumber;
+  late TextEditingController _compteTiersController;
+  late String _compteGeneral;
 
   @override
   void initState() {
@@ -26,8 +26,17 @@ class _TierFormScreenState extends State<TierFormScreen> {
     _nameController = TextEditingController(text: widget.tier?.name ?? '');
     _phoneController = TextEditingController(text: widget.tier?.phone ?? '');
     _addressController = TextEditingController(text: widget.tier?.address ?? '');
-    _compteComptableController = TextEditingController(text: widget.tier?.compteComptable ?? '');
-    _accountNumber = widget.tier?.accountNumber ?? (widget.type == TierType.client ? '41100000' : '40100000');
+    _compteTiersController = TextEditingController(text: widget.tier?.compteTiers ?? '');
+    _compteGeneral = widget.tier?.compteGeneral ?? (widget.type == TierType.client ? '41100000' : '40100000');
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _phoneController.dispose();
+    _addressController.dispose();
+    _compteTiersController.dispose();
+    super.dispose();
   }
 
   @override
@@ -74,12 +83,13 @@ class _TierFormScreenState extends State<TierFormScreen> {
                           ),
                           const SizedBox(height: 20),
                           DropdownButtonFormField<String>(
-                            value: _accountNumber,
+                            value: ['41100000', '40100000'].contains(_compteGeneral) ? _compteGeneral : null,
                             isExpanded: true,
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               labelText: 'Catégorie Générale',
-                              prefixIcon: Icon(Icons.category),
-                              border: OutlineInputBorder(),
+                              hintText: _compteGeneral,
+                              prefixIcon: const Icon(Icons.category),
+                              border: const OutlineInputBorder(),
                             ),
                             items: const [
                               DropdownMenuItem(
@@ -91,17 +101,16 @@ class _TierFormScreenState extends State<TierFormScreen> {
                                 child: Text('40100000 - Fournisseurs', overflow: TextOverflow.ellipsis)
                               ),
                             ],
-                            onChanged: (val) => setState(() => _accountNumber = val!),
+                            onChanged: (val) => setState(() => _compteGeneral = val!),
                           ),
                           const SizedBox(height: 20),
                           TextFormField(
-                            controller: _compteComptableController,
+                            controller: _compteTiersController,
                             decoration: const InputDecoration(
-                              labelText: 'Sous-compte Comptable (ex: 41110001)',
+                              labelText: 'Compte Tiers (ex: 411AZIZ)',
                               prefixIcon: Icon(Icons.account_tree),
                               border: OutlineInputBorder(),
                             ),
-                            keyboardType: TextInputType.number,
                           ),
                           const SizedBox(height: 20),
                           TextFormField(
@@ -127,38 +136,38 @@ class _TierFormScreenState extends State<TierFormScreen> {
                           final firestoreService = context.read<FirestoreService>();
                           final newName = _nameController.text.trim().toUpperCase();
 
-                          // Vérification des doublons (uniquement pour les nouveaux tiers)
+                          // Vérification des doublons (Nom et Compte Tiers)
                           if (widget.tier == null) {
                             final allTiers = await firestoreService.getTiers(null).first;
-                            final alreadyExists = allTiers.any((t) => 
-                              t.name.trim().toUpperCase() == newName
-                            );
+                            bool nameExists = allTiers.any((t) => t.name.trim().toUpperCase() == newName);
+                            bool codeExists = allTiers.any((t) => t.compteTiers.trim().toUpperCase() == _compteTiersController.text.trim().toUpperCase());
 
-                            if (alreadyExists) {
+                            if (nameExists || codeExists) {
                               if (mounted) {
+                                String errorMsg = nameExists ? "Le nom '$newName' existe déjà." : "Le compte tiers '${_compteTiersController.text.toUpperCase()}' existe déjà.";
                                 showDialog(
                                   context: context,
                                   builder: (context) => AlertDialog(
                                     title: const Text("Doublon détecté", style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
-                                    content: Text("Le nom '$newName' existe déjà dans la base de données (Client ou Fournisseur).\n\nVeuillez utiliser un nom différent ou modifier le tiers existant."),
+                                    content: Text("$errorMsg\n\nVeuillez utiliser des identifiants uniques."),
                                     actions: [
                                       TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK")),
                                     ],
                                   ),
                                 );
                               }
-                              return; // Arrêter l'enregistrement
+                              return;
                             }
                           }
 
                           final tier = Tier(
                             id: widget.tier?.id ?? '',
                             name: newName,
-                            phone: _phoneController.text,
-                            address: _addressController.text,
-                            type: _accountNumber == '41100000' ? TierType.client : TierType.supplier,
-                            accountNumber: _accountNumber,
-                            compteComptable: _compteComptableController.text,
+                            phone: _phoneController.text.trim(),
+                            address: _addressController.text.trim(),
+                            type: _compteGeneral == '41100000' ? TierType.client : TierType.supplier,
+                            compteGeneral: _compteGeneral,
+                            compteTiers: _compteTiersController.text.trim().toUpperCase(),
                           );
                           
                           if (widget.tier == null) {

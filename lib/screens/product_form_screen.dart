@@ -15,6 +15,7 @@ class ProductFormScreen extends StatefulWidget {
 
 class _ProductFormScreenState extends State<ProductFormScreen> {
   final _formKey = GlobalKey<FormState>();
+  late TextEditingController _referenceController;
   late TextEditingController _nameController;
   late TextEditingController _descriptionController;
   late TextEditingController _purchasePriceController;
@@ -30,6 +31,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   @override
   void initState() {
     super.initState();
+    _referenceController = TextEditingController(text: widget.product?.reference ?? '');
     _nameController = TextEditingController(text: widget.product?.name ?? '');
     _descriptionController = TextEditingController(text: widget.product?.description ?? '');
     _purchasePriceController = TextEditingController(text: widget.product?.purchasePrice.toString() ?? '0');
@@ -41,6 +43,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
 
   @override
   void dispose() {
+    _referenceController.dispose();
     _nameController.dispose();
     _descriptionController.dispose();
     _purchasePriceController.dispose();
@@ -71,19 +74,19 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                 
                 // Initialisation des comptes au chargement
                 if (accounts.isNotEmpty && _selectedAccountAchat == null) {
-                  String codeAchat = widget.product?.compteAchat ?? '601100';
-                  String codeVente = widget.product?.compteVente ?? '701100';
+                  String codeAchat = widget.product?.compteAchat ?? '60110000';
+                  String codeVente = widget.product?.compteVente ?? '70110000';
                   
                   try {
                     _selectedAccountAchat = accounts.firstWhere((a) => a.code == codeAchat);
                   } catch(_) {
-                    _selectedAccountAchat = accounts.where((a) => a.nature == 'Charge').firstOrNull;
+                    _selectedAccountAchat = accounts.firstWhere((a) => a.code == '60110000', orElse: () => accounts.first);
                   }
                   
                   try {
                     _selectedAccountVente = accounts.firstWhere((a) => a.code == codeVente);
                   } catch(_) {
-                    _selectedAccountVente = accounts.where((a) => a.nature == 'Produit').firstOrNull;
+                    _selectedAccountVente = accounts.firstWhere((a) => a.code == '70110000', orElse: () => accounts.first);
                   }
                 }
 
@@ -112,6 +115,15 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                           padding: const EdgeInsets.all(20.0),
                           child: Column(
                             children: [
+                              TextFormField(
+                                controller: _referenceController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Référence ',
+                                  prefixIcon: Icon(Icons.label_important_outline),
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                              const SizedBox(height: 20),
                               TextFormField(
                                 controller: _nameController,
                                 decoration: const InputDecoration(
@@ -315,16 +327,44 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                         child: ElevatedButton(
                           onPressed: () async {
                             if (_formKey.currentState!.validate()) {
+                              final newName = _nameController.text.trim().toUpperCase();
+                              final newRef = _referenceController.text.trim().toUpperCase();
+
+                              // Vérification des doublons (Nom et Référence)
+                              if (widget.product == null) {
+                                final allProducts = await service.getProducts().first;
+                                bool nameExists = allProducts.any((p) => p.name.trim().toUpperCase() == newName);
+                                bool refExists = newRef.isNotEmpty && allProducts.any((p) => p.reference.trim().toUpperCase() == newRef);
+
+                                if (nameExists || refExists) {
+                                  if (mounted) {
+                                    String errorMsg = nameExists ? "Le nom '$newName' existe déjà." : "La référence '$newRef' existe déjà.";
+                                    showDialog(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: const Text("Doublon détecté", style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+                                        content: Text("$errorMsg\n\nVeuillez utiliser des identifiants uniques."),
+                                        actions: [
+                                          TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK")),
+                                        ],
+                                      ),
+                                    );
+                                  }
+                                  return;
+                                }
+                              }
+
                               final product = Product(
                                 id: widget.product?.id ?? '',
-                                name: _nameController.text.toUpperCase(),
+                                reference: newRef,
+                                name: newName,
                                 description: _descriptionController.text,
                                 purchasePrice: double.tryParse(_purchasePriceController.text) ?? 0,
                                 sellingPrice: double.tryParse(_sellingPriceController.text) ?? 0,
                                 totalQuantity: int.tryParse(_quantityController.text) ?? 0,
                                 category: _category,
-                                compteAchat: _selectedAccountAchat?.code ?? '601100',
-                                compteVente: _selectedAccountVente?.code ?? '701100',
+                                compteAchat: _selectedAccountAchat?.code ?? '60110000',
+                                compteVente: _selectedAccountVente?.code ?? '70110000',
                               );
                               
                               if (widget.product == null) {

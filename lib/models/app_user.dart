@@ -24,6 +24,17 @@ class AppUser {
   final bool canViewTransport;
   final bool canEditTransport;
 
+  // Nouveaux modules
+  final bool canViewAudit;
+  final bool canViewExpenses;
+  final bool canViewAdvances;
+  final bool canViewTransfers;
+  final bool canViewReminders;
+  final bool canViewWeather;
+  final bool canViewDeliveries;
+  final bool canManagePayroll;
+  final bool canImportExport;
+
   AppUser({
     required this.uid,
     required this.email,
@@ -43,6 +54,15 @@ class AppUser {
     this.canDeleteTiers = false,
     this.canViewTransport = false,
     this.canEditTransport = false,
+    this.canViewAudit = false,
+    this.canViewExpenses = false,
+    this.canViewAdvances = false,
+    this.canViewTransfers = false,
+    this.canViewReminders = false,
+    this.canViewWeather = false,
+    this.canViewDeliveries = false,
+    this.canManagePayroll = false,
+    this.canImportExport = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -65,6 +85,15 @@ class AppUser {
       'canDeleteTiers': canDeleteTiers,
       'canViewTransport': canViewTransport,
       'canEditTransport': canEditTransport,
+      'canViewAudit': canViewAudit,
+      'canViewExpenses': canViewExpenses,
+      'canViewAdvances': canViewAdvances,
+      'canViewTransfers': canViewTransfers,
+      'canViewReminders': canViewReminders,
+      'canViewWeather': canViewWeather,
+      'canViewDeliveries': canViewDeliveries,
+      'canManagePayroll': canManagePayroll,
+      'canImportExport': canImportExport,
     };
   }
 
@@ -91,6 +120,15 @@ class AppUser {
       canDeleteTiers: map['canDeleteTiers'] ?? false,
       canViewTransport: map['canViewTransport'] ?? false,
       canEditTransport: map['canEditTransport'] ?? false,
+      canViewAudit: map['canViewAudit'] ?? false,
+      canViewExpenses: map['canViewExpenses'] ?? false,
+      canViewAdvances: map['canViewAdvances'] ?? false,
+      canViewTransfers: map['canViewTransfers'] ?? false,
+      canViewReminders: map['canViewReminders'] ?? false,
+      canViewWeather: map['canViewWeather'] ?? false,
+      canViewDeliveries: map['canViewDeliveries'] ?? false,
+      canManagePayroll: map['canManagePayroll'] ?? false,
+      canImportExport: map['canImportExport'] ?? false,
     );
   }
 }

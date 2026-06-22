@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:rxdart/rxdart.dart';
 import 'services/auth_service.dart';
 import 'services/firestore_service.dart';
 import 'screens/login_screen.dart';
@@ -36,15 +37,18 @@ class MyApp extends StatelessWidget {
         Provider<AuthService>(create: (_) => AuthService()),
         Provider<FirestoreService>(create: (_) => FirestoreService()),
         StreamProvider<AppUser?>(
-          create: (context) => context.read<AuthService>().user.asyncMap((user) {
-            if (user == null) return null;
-            return context.read<AuthService>().getAppUser(user.uid);
-          }),
+          create: (context) {
+            final authService = context.read<AuthService>();
+            return authService.user.switchMap((user) {
+              if (user == null) return Stream.value(null);
+              return authService.userProfile(user.uid);
+            });
+          },
           initialData: null,
         ),
       ],
       child: MaterialApp(
-         title: 'KO SOLAR ERP',
+         title: 'K-O SOLAR',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,
@@ -68,9 +72,9 @@ class AuthWrapper extends StatelessWidget {
     final authService = Provider.of<AuthService>(context);
 
     return StreamBuilder<AppUser?>(
-      stream: authService.user.asyncMap((user) async {
-        if (user == null) return null;
-        return await authService.getAppUser(user.uid);
+      stream: authService.user.switchMap((user) {
+        if (user == null) return Stream.value(null);
+        return authService.userProfile(user.uid);
       }),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
