@@ -27,15 +27,31 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   bool _canViewProducts = true;
   bool _canEditProducts = false;
   bool _canDeleteProducts = false;
-  bool _canViewAccounting = false;
   bool _canManageUsers = false;
-  bool _canViewTiers = true;
+  bool _canViewClients = true;
+  bool _canViewSuppliers = true;
   bool _canEditTiers = false;
   bool _canDeleteTiers = false;
   bool _canViewTransport = false;
   bool _canEditTransport = false;
 
-  // Nouveaux modules
+  // Règlements
+  bool _canViewPayments = false;
+  bool _canAddClientPayment = false;
+  bool _canAddSupplierPayment = false;
+  bool _canDeletePayment = false;
+
+  // Comptabilité spécifique
+  bool _canViewUnpaidReport = false;
+  bool _canViewPlanComptable = false;
+  bool _canViewJournalComptable = false;
+  bool _canViewTrialBalance = false;
+  bool _canViewAgedBalance = false;
+  bool _canViewCashControl = false;
+  bool _canManageFiscalYears = false;
+  bool _canManageReconciliation = false;
+
+  // Autres modules
   bool _canViewAudit = false;
   bool _canViewExpenses = false;
   bool _canViewAdvances = false;
@@ -53,6 +69,10 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
         title: const Text('Gestion des Utilisateurs'),
         backgroundColor: const Color(0xFF1A237E),
         foregroundColor: Colors.white,
+        actions: [
+          _buildResetRequestsBadge(context),
+          const SizedBox(width: 10),
+        ],
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('users').snapshots(),
@@ -84,6 +104,11 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                       onPressed: () => _showEditUserDialog(context, appUser),
                     ),
                     IconButton(
+                      icon: const Icon(Icons.lock_reset, color: Colors.orange),
+                      tooltip: 'Réinitialiser le mot de passe',
+                      onPressed: () => _resetUserPassword(context, userData['email']),
+                    ),
+                    IconButton(
                       icon: const Icon(Icons.delete, color: Colors.red),
                       onPressed: () => _confirmDeleteUser(context, userDoc.id, userData['displayName'] ?? ''),
                     ),
@@ -99,6 +124,73 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
         backgroundColor: const Color(0xFF1A237E),
         icon: const Icon(Icons.person_add, color: Colors.white),
         label: const Text('Ajouter Membre', style: TextStyle(color: Colors.white)),
+      ),
+    );
+  }
+
+  Widget _buildResetRequestsBadge(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('password_resets').where('status', isEqualTo: 'en_attente').snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const SizedBox.shrink();
+        int count = snapshot.data!.docs.length;
+        return IconButton(
+          icon: Badge(
+            label: Text('$count'),
+            child: const Icon(Icons.notifications_active, color: Colors.orangeAccent),
+          ),
+          onPressed: () => _showResetRequestsDialog(context, snapshot.data!.docs),
+        );
+      },
+    );
+  }
+
+  void _showResetRequestsDialog(BuildContext context, List<QueryDocumentSnapshot> requests) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Demandes de réinitialisation'),
+        content: SizedBox(
+          width: 400,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: requests.length,
+            itemBuilder: (context, index) {
+              final req = requests[index].data() as Map<String, dynamic>;
+              return ListTile(
+                title: Text(req['email']),
+                subtitle: const Text('Attend un nouveau mot de passe'),
+                trailing: ElevatedButton(
+                  onPressed: () => _approveResetRequest(context, req['email']),
+                  child: const Text('Approuver'),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _approveResetRequest(BuildContext context, String email) async {
+    final passCtrl = TextEditingController(text: 'Solar2024');
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Nouveau mot de passe pour $email'),
+        content: TextField(controller: passCtrl, decoration: const InputDecoration(labelText: 'Mot de passe temporaire')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () async {
+              await context.read<AuthService>().approvePasswordReset(email, passCtrl.text.trim());
+              Navigator.pop(context); // Fermer sous-dialog
+              Navigator.pop(context); // Fermer liste
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mot de passe mis à jour !')));
+            },
+            child: const Text('VALIDER'),
+          ),
+        ],
       ),
     );
   }
@@ -121,6 +213,19 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       dense: true,
       onChanged: (v) => setDialogState(() => onChanged(v)),
     );
+  }
+
+  void _resetUserPassword(BuildContext context, String email) async {
+    try {
+      await context.read<AuthService>().sendPasswordResetEmail(email);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Email de réinitialisation envoyé à $email'), backgroundColor: Colors.green),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   void _confirmDeleteUser(BuildContext context, String uid, String name) {
@@ -155,13 +260,25 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     _canViewProducts = user.canViewProducts;
     _canEditProducts = user.canEditProducts;
     _canDeleteProducts = user.canDeleteProducts;
-    _canViewAccounting = user.canViewAccounting;
     _canManageUsers = user.canManageUsers;
-    _canViewTiers = user.canViewTiers;
+    _canViewClients = user.canViewClients;
+    _canViewSuppliers = user.canViewSuppliers;
     _canEditTiers = user.canEditTiers;
     _canDeleteTiers = user.canDeleteTiers;
     _canViewTransport = user.canViewTransport;
     _canEditTransport = user.canEditTransport;
+    _canViewPayments = user.canViewPayments;
+    _canAddClientPayment = user.canAddClientPayment;
+    _canAddSupplierPayment = user.canAddSupplierPayment;
+    _canDeletePayment = user.canDeletePayment;
+    _canViewUnpaidReport = user.canViewUnpaidReport;
+    _canViewPlanComptable = user.canViewPlanComptable;
+    _canViewJournalComptable = user.canViewJournalComptable;
+    _canViewTrialBalance = user.canViewTrialBalance;
+    _canViewAgedBalance = user.canViewAgedBalance;
+    _canViewCashControl = user.canViewCashControl;
+    _canManageFiscalYears = user.canManageFiscalYears;
+    _canManageReconciliation = user.canManageReconciliation;
     _canViewAudit = user.canViewAudit;
     _canViewExpenses = user.canViewExpenses;
     _canViewAdvances = user.canViewAdvances;
@@ -211,23 +328,40 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                   ),
                 ],
                 const Divider(),
-                const Text('Permissions détaillées', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('Permissions Commerciales', style: TextStyle(fontWeight: FontWeight.bold)),
                 _buildPermissionSwitch(setDialogState, 'Voir Achats', _canViewPurchases, (v) => _canViewPurchases = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Ventes', _canViewSales, (v) => _canViewSales = v),
                 _buildPermissionSwitch(setDialogState, 'Supprimer Ventes', _canDeleteSales, (v) => _canDeleteSales = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Produits', _canViewProducts, (v) => _canViewProducts = v),
                 _buildPermissionSwitch(setDialogState, 'Créer/Modif Produits', _canEditProducts, (v) => _canEditProducts = v),
                 _buildPermissionSwitch(setDialogState, 'Supprimer Produits', _canDeleteProducts, (v) => _canDeleteProducts = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Comptabilité', _canViewAccounting, (v) => _canViewAccounting = v),
                 _buildPermissionSwitch(setDialogState, 'Gérer Utilisateurs', _canManageUsers, (v) => _canManageUsers = v),
                 const Divider(),
-                _buildPermissionSwitch(setDialogState, 'Voir Clients/Fourn.', _canViewTiers, (v) => _canViewTiers = v),
+                const Text('Clients & Fournisseurs', style: TextStyle(fontWeight: FontWeight.bold)),
+                _buildPermissionSwitch(setDialogState, 'Voir Clients', _canViewClients, (v) => _canViewClients = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Fournisseurs', _canViewSuppliers, (v) => _canViewSuppliers = v),
                 _buildPermissionSwitch(setDialogState, 'Créer/Modifier Tiers', _canEditTiers, (v) => _canEditTiers = v),
                 _buildPermissionSwitch(setDialogState, 'Supprimer Tiers', _canDeleteTiers, (v) => _canDeleteTiers = v),
+                const Divider(),
+                const Text('Règlements & Trésorerie', style: TextStyle(fontWeight: FontWeight.bold)),
+                _buildPermissionSwitch(setDialogState, 'Voir Hist. Règlements', _canViewPayments, (v) => _canViewPayments = v),
+                _buildPermissionSwitch(setDialogState, 'Faire Règl. Client (Encais.)', _canAddClientPayment, (v) => _canAddClientPayment = v),
+                _buildPermissionSwitch(setDialogState, 'Faire Règl. Fourn. (Décais.)', _canAddSupplierPayment, (v) => _canAddSupplierPayment = v),
+                _buildPermissionSwitch(setDialogState, 'Supprimer Règlements', _canDeletePayment, (v) => _canDeletePayment = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Contrôle de Caisse', _canViewCashControl, (v) => _canViewCashControl = v),
+                _buildPermissionSwitch(setDialogState, 'Gérer Rapprochement Banc.', _canManageReconciliation, (v) => _canManageReconciliation = v),
+                const Divider(),
+                const Text('Comptabilité & Rapports', style: TextStyle(fontWeight: FontWeight.bold)),
+                _buildPermissionSwitch(setDialogState, 'Voir État des Impayés', _canViewUnpaidReport, (v) => _canViewUnpaidReport = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Plan Comptable', _canViewPlanComptable, (v) => _canViewPlanComptable = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Journal Comptable', _canViewJournalComptable, (v) => _canViewJournalComptable = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Balance des Comptes', _canViewTrialBalance, (v) => _canViewTrialBalance = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Balance Agée', _canViewAgedBalance, (v) => _canViewAgedBalance = v),
+                _buildPermissionSwitch(setDialogState, 'Gérer Exercices Comptables', _canManageFiscalYears, (v) => _canManageFiscalYears = v),
+                const Divider(),
+                const Text('Modules Avancés', style: TextStyle(fontWeight: FontWeight.bold)),
                 _buildPermissionSwitch(setDialogState, 'Voir Transport', _canViewTransport, (v) => _canViewTransport = v),
                 _buildPermissionSwitch(setDialogState, 'Gérer Transport', _canEditTransport, (v) => _canEditTransport = v),
-                const Divider(),
-                const Text('Nouveaux Modules', style: TextStyle(fontWeight: FontWeight.bold)),
                 _buildPermissionSwitch(setDialogState, 'Voir Audit/Traçabilité', _canViewAudit, (v) => _canViewAudit = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Dépenses', _canViewExpenses, (v) => _canViewExpenses = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Avances', _canViewAdvances, (v) => _canViewAdvances = v),
@@ -256,13 +390,25 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                   canViewProducts: _canViewProducts,
                   canEditProducts: _canEditProducts,
                   canDeleteProducts: _canDeleteProducts,
-                  canViewAccounting: _canViewAccounting,
                   canManageUsers: _canManageUsers,
-                  canViewTiers: _canViewTiers,
+                  canViewClients: _canViewClients,
+                  canViewSuppliers: _canViewSuppliers,
                   canEditTiers: _canEditTiers,
                   canDeleteTiers: _canDeleteTiers,
                   canViewTransport: _canViewTransport,
                   canEditTransport: _canEditTransport,
+                  canViewPayments: _canViewPayments,
+                  canAddClientPayment: _canAddClientPayment,
+                  canAddSupplierPayment: _canAddSupplierPayment,
+                  canDeletePayment: _canDeletePayment,
+                  canViewUnpaidReport: _canViewUnpaidReport,
+                  canViewPlanComptable: _canViewPlanComptable,
+                  canViewJournalComptable: _canViewJournalComptable,
+                  canViewTrialBalance: _canViewTrialBalance,
+                  canViewAgedBalance: _canViewAgedBalance,
+                  canViewCashControl: _canViewCashControl,
+                  canManageFiscalYears: _canManageFiscalYears,
+                  canManageReconciliation: _canManageReconciliation,
                   canViewAudit: _canViewAudit,
                   canViewExpenses: _canViewExpenses,
                   canViewAdvances: _canViewAdvances,
@@ -291,9 +437,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     _passwordController.clear();
     _selectedRole = UserRole.employee;
     _selectedWarehouseId = null;
-    // Reset permissions to default employee
-    _canViewSales = _canViewProducts = _canViewTiers = true;
-    _canViewPurchases = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canEditTiers = _canDeleteTiers = _canViewTransport = _canEditTransport = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = _canManagePayroll = _canImportExport = false;
+    // Reset permissions
+    _canViewSales = _canViewProducts = _canViewClients = _canViewSuppliers = true;
+    _canViewPurchases = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canManageUsers = _canEditTiers = _canDeleteTiers = _canViewTransport = _canEditTransport = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = _canManagePayroll = _canImportExport = _canViewTrialBalance = _canViewAgedBalance = _canViewCashControl = _canViewPayments = _canAddClientPayment = _canAddSupplierPayment = _canDeletePayment = _canManageFiscalYears = _canManageReconciliation = _canViewUnpaidReport = _canViewPlanComptable = _canViewJournalComptable = false;
     
     final service = context.read<FirestoreService>();
 
@@ -323,70 +469,44 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                   onChanged: (val) {
                     setDialogState(() {
                       _selectedRole = val!;
-                      // Pré-configuration par défaut selon le rôle
                       if (_selectedRole == UserRole.admin) {
-                        _canViewPurchases = _canViewSales = _canDeleteSales = _canViewProducts = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = _canManagePayroll = _canImportExport = true;
-                      } else if (_selectedRole == UserRole.storekeeper) {
-                        _canViewProducts = _canViewDeliveries = true;
-                        _canViewPurchases = _canViewSales = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = false;
-                      } else if (_selectedRole == UserRole.technician) {
-                        _canViewProducts = true;
-                        _canViewPurchases = _canViewSales = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = false;
-                      } else if (_selectedRole == UserRole.tech_manager) {
-                        _canViewSales = _canViewProducts = true;
-                        _canViewPurchases = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = false;
-                      } else if (_selectedRole == UserRole.manager) {
-                        _canViewPurchases = _canViewSales = _canViewProducts = _canEditProducts = _canViewTiers = _canEditTiers = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = true;
-                        _canDeleteSales = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canDeleteTiers = _canViewTransport = _canEditTransport = _canViewAudit = false;
+                        _canViewPurchases = _canViewSales = _canDeleteSales = _canViewProducts = _canEditProducts = _canDeleteProducts = _canManageUsers = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = _canManagePayroll = _canImportExport = _canViewTrialBalance = _canViewAgedBalance = _canViewCashControl = _canViewPayments = _canAddClientPayment = _canAddSupplierPayment = _canDeletePayment = _canManageFiscalYears = _canManageReconciliation = _canViewUnpaidReport = _canViewPlanComptable = _canViewJournalComptable = true;
+                        _canViewClients = _canViewSuppliers = true;
                       } else {
-                        _canViewSales = _canViewProducts = _canViewTiers = true;
-                        _canViewPurchases = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canViewAccounting = _canManageUsers = _canEditTiers = _canDeleteTiers = _canViewTransport = _canEditTransport = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = false;
+                        _canViewSales = _canViewProducts = _canViewClients = _canViewSuppliers = true;
+                        _canViewPurchases = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canManageUsers = _canEditTiers = _canDeleteTiers = _canViewTransport = _canEditTransport = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = _canViewPayments = _canAddClientPayment = _canAddSupplierPayment = _canDeletePayment = _canManageFiscalYears = _canManageReconciliation = _canViewUnpaidReport = _canViewPlanComptable = _canViewJournalComptable = false;
                       }
                     });
                   },
                 ),
-                if (_selectedRole == UserRole.storekeeper) ...[
-                  const SizedBox(height: 10),
-                  StreamBuilder<List<Warehouse>>(
-                    stream: service.getWarehouses(),
-                    builder: (context, snapshot) {
-                      final warehouses = snapshot.data ?? [];
-                      return DropdownButtonFormField<String>(
-                        value: _selectedWarehouseId,
-                        decoration: const InputDecoration(labelText: 'Assigner un dépôt', border: OutlineInputBorder()),
-                        items: warehouses.map((w) => DropdownMenuItem(value: w.id, child: Text(w.name))).toList(),
-                        onChanged: (val) => setDialogState(() => _selectedWarehouseId = val),
-                        validator: (val) => _selectedRole == UserRole.storekeeper && val == null ? 'Dépôt requis' : null,
-                      );
-                    },
-                  ),
-                ],
                 const Divider(),
                 const Text('Permissions détaillées', style: TextStyle(fontWeight: FontWeight.bold)),
                 _buildPermissionSwitch(setDialogState, 'Voir Achats', _canViewPurchases, (v) => _canViewPurchases = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Ventes', _canViewSales, (v) => _canViewSales = v),
-                _buildPermissionSwitch(setDialogState, 'Supprimer Ventes', _canDeleteSales, (v) => _canDeleteSales = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Produits', _canViewProducts, (v) => _canViewProducts = v),
-                _buildPermissionSwitch(setDialogState, 'Créer/Modifier Produits', _canEditProducts, (v) => _canEditProducts = v),
-                _buildPermissionSwitch(setDialogState, 'Supprimer Produits', _canDeleteProducts, (v) => _canDeleteProducts = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Comptabilité', _canViewAccounting, (v) => _canViewAccounting = v),
-                _buildPermissionSwitch(setDialogState, 'Gérer Utilisateurs', _canManageUsers, (v) => _canManageUsers = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Clients', _canViewClients, (v) => _canViewClients = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Fournisseurs', _canViewSuppliers, (v) => _canViewSuppliers = v),
                 const Divider(),
-                const Text('Clients, Fournisseurs & Transport', style: TextStyle(fontWeight: FontWeight.bold)),
-                _buildPermissionSwitch(setDialogState, 'Voir Clients/Fourn.', _canViewTiers, (v) => _canViewTiers = v),
-                _buildPermissionSwitch(setDialogState, 'Créer/Modifier Tiers', _canEditTiers, (v) => _canEditTiers = v),
-                _buildPermissionSwitch(setDialogState, 'Supprimer Tiers', _canDeleteTiers, (v) => _canDeleteTiers = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Hist. Règlements', _canViewPayments, (v) => _canViewPayments = v),
+                _buildPermissionSwitch(setDialogState, 'Faire Règl. Client', _canAddClientPayment, (v) => _canAddClientPayment = v),
+                _buildPermissionSwitch(setDialogState, 'Faire Règl. Fournisseur', _canAddSupplierPayment, (v) => _canAddSupplierPayment = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Contrôle de Caisse', _canViewCashControl, (v) => _canViewCashControl = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Balance des Comptes', _canViewTrialBalance, (v) => _canViewTrialBalance = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Balance Agée', _canViewAgedBalance, (v) => _canViewAgedBalance = v),
+                _buildPermissionSwitch(setDialogState, 'Voir État des Impayés', _canViewUnpaidReport, (v) => _canViewUnpaidReport = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Plan Comptable', _canViewPlanComptable, (v) => _canViewPlanComptable = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Journal Comptable', _canViewJournalComptable, (v) => _canViewJournalComptable = v),
+                _buildPermissionSwitch(setDialogState, 'Gérer Exercices Compt.', _canManageFiscalYears, (v) => _canManageFiscalYears = v),
+                _buildPermissionSwitch(setDialogState, 'Gérer Rapprochement Banc.', _canManageReconciliation, (v) => _canManageReconciliation = v),
+                const Divider(),
                 _buildPermissionSwitch(setDialogState, 'Voir Transport', _canViewTransport, (v) => _canViewTransport = v),
-                _buildPermissionSwitch(setDialogState, 'Gérer Transport', _canEditTransport, (v) => _canEditTransport = v),
-                const Divider(),
-                const Text('Nouveaux Modules', style: TextStyle(fontWeight: FontWeight.bold)),
-                _buildPermissionSwitch(setDialogState, 'Voir Audit/Traçabilité', _canViewAudit, (v) => _canViewAudit = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Audit', _canViewAudit, (v) => _canViewAudit = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Dépenses', _canViewExpenses, (v) => _canViewExpenses = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Avances', _canViewAdvances, (v) => _canViewAdvances = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Transferts Stock', _canViewTransfers, (v) => _canViewTransfers = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Relance Impayés', _canViewReminders, (v) => _canViewReminders = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Alertes Météo', _canViewWeather, (v) => _canViewWeather = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Livraisons (BL)', _canViewDeliveries, (v) => _canViewDeliveries = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Transferts', _canViewTransfers, (v) => _canViewTransfers = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Relances', _canViewReminders, (v) => _canViewReminders = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Météo', _canViewWeather, (v) => _canViewWeather = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Livraisons', _canViewDeliveries, (v) => _canViewDeliveries = v),
               ],
             ),
           ),
@@ -397,27 +517,38 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 if (_emailController.text.isEmpty || _passwordController.text.isEmpty) return;
                 try {
                   showDialog(context: context, barrierDismissible: false, builder: (context) => const Center(child: CircularProgressIndicator()));
-                  
+
                   await context.read<AuthService>().registerNewUser(
                     email: _emailController.text.trim(),
                     password: _passwordController.text.trim(),
                     displayName: _nameController.text.trim(),
                     role: _selectedRole,
                     warehouseId: _selectedRole == UserRole.storekeeper ? _selectedWarehouseId : null,
-                    // Passer les permissions
                     canViewPurchases: _canViewPurchases,
                     canViewSales: _canViewSales,
                     canDeleteSales: _canDeleteSales,
                     canViewProducts: _canViewProducts,
                     canEditProducts: _canEditProducts,
                     canDeleteProducts: _canDeleteProducts,
-                    canViewAccounting: _canViewAccounting,
                     canManageUsers: _canManageUsers,
-                    canViewTiers: _canViewTiers,
+                    canViewClients: _canViewClients,
+                    canViewSuppliers: _canViewSuppliers,
                     canEditTiers: _canEditTiers,
                     canDeleteTiers: _canDeleteTiers,
                     canViewTransport: _canViewTransport,
                     canEditTransport: _canEditTransport,
+                    canViewPayments: _canViewPayments,
+                    canAddClientPayment: _canAddClientPayment,
+                    canAddSupplierPayment: _canAddSupplierPayment,
+                    canDeletePayment: _canDeletePayment,
+                    canViewUnpaidReport: _canViewUnpaidReport,
+                    canViewPlanComptable: _canViewPlanComptable,
+                    canViewJournalComptable: _canViewJournalComptable,
+                    canViewTrialBalance: _canViewTrialBalance,
+                    canViewAgedBalance: _canViewAgedBalance,
+                    canViewCashControl: _canViewCashControl,
+                    canManageFiscalYears: _canManageFiscalYears,
+                    canManageReconciliation: _canManageReconciliation,
                     canViewAudit: _canViewAudit,
                     canViewExpenses: _canViewExpenses,
                     canViewAdvances: _canViewAdvances,
@@ -428,14 +559,14 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                     canManagePayroll: _canManagePayroll,
                     canImportExport: _canImportExport,
                   );
-                  
+
                   Navigator.pop(context); // Fermer loader
                   Navigator.pop(context); // Fermer dialog
-                  
+
                   _emailController.clear();
                   _passwordController.clear();
                   _nameController.clear();
-                  
+
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Compte créé avec succès !')));
                 } catch (e) {
                   Navigator.pop(context); // Fermer loader

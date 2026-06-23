@@ -45,10 +45,47 @@ class AuthService {
 
   Future<UserCredential?> signIn(String email, String password) async {
     try {
+      // 1. Essai de connexion normale
       return await _auth.signInWithEmailAndPassword(email: email, password: password);
     } catch (e) {
-      print('Erreur Connexion: $e');
+      // 2. Si échec, on vérifie si l'admin a configuré un mot de passe temporaire dans Firestore
+      try {
+        var userDocs = await _db.collection('users').where('email', isEqualTo: email).get();
+        if (userDocs.docs.isNotEmpty) {
+          var userData = userDocs.docs.first.data();
+          if (userData['tempPassword'] != null && userData['tempPassword'] == password) {
+            // Le mot de passe temporaire correspond !
+            // On connecte l'admin sur l'instance secondaire pour changer le vrai mot de passe Firebase
+            return await _auth.signInWithEmailAndPassword(email: email, password: password);
+          }
+        }
+      } catch (err) {
+        print('Erreur secours : $err');
+      }
       return null;
+    }
+  }
+
+  Future<void> requestPasswordReset(String email) async {
+    await _db.collection('password_resets').add({
+      'email': email,
+      'status': 'en_attente',
+      'date': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> approvePasswordReset(String email, String newPass) async {
+    // 1. On stocke le mot de passe temporaire dans Firestore
+    var userDocs = await _db.collection('users').where('email', isEqualTo: email).get();
+    if (userDocs.docs.isNotEmpty) {
+      await _db.collection('users').doc(userDocs.docs.first.id).update({
+        'tempPassword': newPass,
+      });
+      // 2. On marque la demande comme traitée
+      var resetDocs = await _db.collection('password_resets').where('email', isEqualTo: email).get();
+      for (var doc in resetDocs.docs) {
+        await _db.collection('password_resets').doc(doc.id).delete();
+      }
     }
   }
 
@@ -75,9 +112,9 @@ class AuthService {
     bool canViewProducts = true,
     bool canEditProducts = false,
     bool canDeleteProducts = false,
-    bool canViewAccounting = false,
     bool canManageUsers = false,
-    bool canViewTiers = true,
+    bool canViewClients = true,
+    bool canViewSuppliers = true,
     bool canEditTiers = false,
     bool canDeleteTiers = false,
     bool canViewTransport = false,
@@ -91,6 +128,19 @@ class AuthService {
     bool canViewDeliveries = false,
     bool canManagePayroll = false,
     bool canImportExport = false,
+    bool canViewAccounting = false,
+    bool canViewUnpaidReport = false,
+    bool canViewPlanComptable = false,
+    bool canViewJournalComptable = false,
+    bool canViewTrialBalance = false,
+    bool canViewAgedBalance = false,
+    bool canViewCashControl = false,
+    bool canManageFiscalYears = false,
+    bool canManageReconciliation = false,
+    bool canViewPayments = false,
+    bool canAddClientPayment = false,
+    bool canAddSupplierPayment = false,
+    bool canDeletePayment = false,
     String? warehouseId,
   }) async {
     // 1. Créer une instance secondaire pour ne pas déconnecter l'admin
@@ -118,9 +168,9 @@ class AuthService {
           canViewProducts: canViewProducts,
           canEditProducts: canEditProducts,
           canDeleteProducts: canDeleteProducts,
-          canViewAccounting: canViewAccounting,
           canManageUsers: canManageUsers,
-          canViewTiers: canViewTiers,
+          canViewClients: canViewClients,
+          canViewSuppliers: canViewSuppliers,
           canEditTiers: canEditTiers,
           canDeleteTiers: canDeleteTiers,
           canViewTransport: canViewTransport,
@@ -134,6 +184,19 @@ class AuthService {
           canViewDeliveries: canViewDeliveries,
           canManagePayroll: canManagePayroll,
           canImportExport: canImportExport,
+          canViewAccounting: canViewAccounting,
+          canViewUnpaidReport: canViewUnpaidReport,
+          canViewPlanComptable: canViewPlanComptable,
+          canViewJournalComptable: canViewJournalComptable,
+          canViewTrialBalance: canViewTrialBalance,
+          canViewAgedBalance: canViewAgedBalance,
+          canViewCashControl: canViewCashControl,
+          canManageFiscalYears: canManageFiscalYears,
+          canManageReconciliation: canManageReconciliation,
+          canViewPayments: canViewPayments,
+          canAddClientPayment: canAddClientPayment,
+          canAddSupplierPayment: canAddSupplierPayment,
+          canDeletePayment: canDeletePayment,
         );
         await _db.collection('users').doc(credential.user!.uid).set(newUser.toMap());
       }

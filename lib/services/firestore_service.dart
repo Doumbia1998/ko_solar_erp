@@ -295,12 +295,14 @@ class FirestoreService {
   }
   Future<void> updateProduct(Product p) => _db.collection('products').doc(p.id).update(p.toMap());
   Future<void> deleteProduct(String id) async {
+    // Verification des operations existantes
     final txSnap = await _db.collection('transactions').get();
     final hasTx = txSnap.docs.any((doc) {
       final items = (doc.data()['items'] as List?) ?? [];
       return items.any((item) => item['productId'] == id);
     });
-    if (hasTx) throw Exception("Impossible de supprimer : cet article est present dans des factures d'achat ou de vente.");
+    if (hasTx) throw Exception("Action interdite : cet article a deja effectue des operations (Achats/Ventes).");
+
     return _db.collection('products').doc(id).delete();
   }
 
@@ -314,7 +316,18 @@ class FirestoreService {
   }
   Future<void> addTier(Tier t) => _db.collection('tiers').add(t.toMap());
   Future<void> updateTier(Tier t) => _db.collection('tiers').doc(t.id).update(t.toMap());
-  Future<void> deleteTier(String id) => _db.collection('tiers').doc(id).delete();
+
+  Future<void> deleteTier(String id) async {
+    // Verification des operations existantes
+    final txSnap = await _db.collection('transactions').where('tierId', isEqualTo: id).get();
+    final paySnap = await _db.collection('payments').where('tierId', isEqualTo: id).get();
+
+    if (txSnap.docs.isNotEmpty || paySnap.docs.isNotEmpty) {
+      throw Exception("Action interdite : ce tiers a deja effectue des operations (Factures/Reglements).");
+    }
+
+    return _db.collection('tiers').doc(id).delete();
+  }
 
   // --- STOCKS ---
   Stream<List<Map<String, dynamic>>> getAllStocks() {
@@ -488,45 +501,51 @@ class FirestoreService {
 
     // --- LOGIQUE AUTOMATIQUE DES AVANCES ---
     if (t.type == TransactionType.sale) {
-      final advancesSnap = await _db.collection('advances')
-          .where('tierId', isEqualTo: t.tierId)
-          .where('isUsed', isEqualTo: false)
-          .get();
+      await applyAdvancesToInvoice(t.tierId, t.tierName, t.invoiceNumber, t.netToPay - t.amountPaid);
+    }
+  }
 
-      if (advancesSnap.docs.isNotEmpty) {
-        WriteBatch advBatch = _db.batch();
-        double remainingToPay = t.netToPay - t.amountPaid;
+  Future<void> applyAdvancesToInvoice(String tierId, String tierName, String invoiceNumber, double amountToCover) async {
+    if (amountToCover <= 50) return;
 
-        for (var doc in advancesSnap.docs) {
-          if (remainingToPay <= 50) break;
+    final advancesSnap = await _db.collection('advances')
+        .where('tierId', isEqualTo: tierId)
+        .where('isUsed', isEqualTo: false)
+        .get();
 
-          final advData = doc.data();
-          double advAmount = (advData['amount'] ?? 0).toDouble();
-          double amountToApply = advAmount > remainingToPay ? remainingToPay : advAmount;
+    if (advancesSnap.docs.isNotEmpty) {
+      WriteBatch advBatch = _db.batch();
+      double remainingToPay = amountToCover;
 
-          advBatch.update(doc.reference, {
-            'isUsed': true,
-            'usedInInvoice': t.invoiceNumber,
-          });
+      for (var doc in advancesSnap.docs) {
+        if (remainingToPay <= 50) break;
 
-          DocumentReference pRef = _db.collection('payments').doc();
-          advBatch.set(pRef, {
-            'id': pRef.id,
-            'tierId': t.tierId,
-            'tierName': t.tierName,
-            'tierType': 'client',
-            'amount': amountToApply,
-            'date': Timestamp.fromDate(DateTime.now()),
-            'method': 'Utilisation Avance',
-            'reference': 'AVANCE-${t.invoiceNumber}',
-            'invoiceNumber': t.invoiceNumber,
-            'createdBy': 'SYSTEME',
-          });
+        final advData = doc.data();
+        double advAmount = (advData['amount'] ?? 0).toDouble();
+        double amountToApply = advAmount > remainingToPay ? remainingToPay : advAmount;
 
-          remainingToPay -= amountToApply;
-        }
-        await advBatch.commit();
+        advBatch.update(doc.reference, {
+          'isUsed': true,
+          'usedInInvoice': invoiceNumber,
+        });
+
+        DocumentReference pRef = _db.collection('payments').doc();
+        advBatch.set(pRef, {
+          'id': pRef.id,
+          'tierId': tierId,
+          'tierName': tierName,
+          'tierType': 'client',
+          'amount': amountToApply,
+          'date': Timestamp.fromDate(DateTime.now()),
+          'method': 'Utilisation Avance',
+          'reference': 'AVANCE-$invoiceNumber',
+          'invoiceNumber': invoiceNumber,
+          'createdBy': 'SYSTEME',
+        });
+
+        remainingToPay -= amountToApply;
       }
+      await advBatch.commit();
     }
   }
 
@@ -704,6 +723,7 @@ class FirestoreService {
       createdBy: userName,
     ).toMap());
     await batch.commit();
+    await applyAdvancesToInvoice(sale.tierId, sale.tierName, sale.invoiceNumber, sale.totalHT);
     await logAction(action: 'convert_quote', entity: 'transactions', entityId: sale.id, userName: userName, details: 'Devis ${quote.invoiceNumber} -> Facture ${sale.invoiceNumber}');
   }
     
@@ -741,6 +761,117 @@ class FirestoreService {
     return batch.commit();
   }
 
+  // --- IMPORT SAGE SOLDES ---
+  Future<int> importSageBalances(String content, String userName) async {
+    // Suppression du BOM si présent et découpage par ligne (supporte Windows/Linux)
+    final cleanedContent = content.replaceAll('\uFEFF', '');
+    final lines = cleanedContent.split(RegExp(r'\r?\n'));
+    int count = 0;
+
+    // Récupération des tiers existants
+    final tiersSnap = await _db.collection('tiers').get();
+    final tiers = tiersSnap.docs.map((d) => Tier.fromMap(d.data(), d.id)).toList();
+
+    for (var line in lines) {
+      final trimmedLine = line.trim();
+      if (trimmedLine.isEmpty) continue;
+
+      // Séparateurs supportés : Tabulation, Point-virgule, Virgule, Barre verticale
+      final parts = trimmedLine.split(RegExp(r'[\t;|]'));
+      if (parts.length < 5) continue;
+
+      // Format attendu : Date(0) / N° Facture(1) / Compte Tiers(2) / Intitule(3) / Montant facturé(4) / Montant réglé(5)
+      final dateStr = parts[0].trim();
+      final invoiceRef = parts[1].trim();
+      final tierCode = parts[2].trim().toUpperCase();
+      final clientNameInFile = parts[3].trim().toUpperCase();
+
+      // Nettoyage robuste des nombres (enlève tout ce qui n'est pas chiffre, virgule ou point)
+      String cleanNum(String s) => s.replaceAll(RegExp(r'[^0-9,.]'), '').replaceAll(',', '.');
+
+      final totalAmount = double.tryParse(cleanNum(parts[4])) ?? 0;
+      double amountPaid = 0;
+      if (parts.length > 5) {
+        amountPaid = double.tryParse(cleanNum(parts[5])) ?? 0;
+      }
+
+      if (totalAmount <= 0) continue;
+
+      // RECHERCHE DU TIERS (3 étapes de sécurité)
+      Tier? tier;
+
+      // 1. Recherche par Code Tiers Sage (le plus fiable)
+      if (tierCode.isNotEmpty) {
+        tier = tiers.where((t) => t.compteTiers.toUpperCase() == tierCode).firstOrNull;
+      }
+
+      // 2. Recherche par Nom exact
+      if (tier == null) {
+        tier = tiers.where((t) => t.name.toUpperCase() == clientNameInFile).firstOrNull;
+      }
+
+      // 3. Recherche par correspondance partielle (Flexible)
+      if (tier == null) {
+        tier = tiers.where((t) {
+          final appName = t.name.toUpperCase();
+          return clientNameInFile.contains(appName) || appName.contains(clientNameInFile);
+        }).firstOrNull;
+      }
+
+      if (tier == null) continue;
+
+      // Parsing de la date (JJ/MM/AAAA ou JJ/MM/YY)
+      DateTime txDate = DateTime.now();
+      try {
+        final dateParts = dateStr.split(RegExp(r'[/.-]'));
+        if (dateParts.length == 3) {
+          int day = int.parse(dateParts[0]);
+          int month = int.parse(dateParts[1]);
+          int year = int.parse(dateParts[2]);
+          if (year < 100) year += 2000;
+          txDate = DateTime(year, month, day);
+        }
+      } catch (_) {}
+
+      final tx = AppTransaction(
+        id: '',
+        invoiceNumber: invoiceRef,
+        date: txDate,
+        tierId: tier.id,
+        tierName: tier.name,
+        type: tier.type == TierType.client ? TransactionType.sale : TransactionType.purchase,
+        items: [
+          TransactionItem(productId: 'REPRISE', productName: 'REPRISE SOLDE SAGE', quantity: 1, unitPrice: totalAmount)
+        ],
+        totalHT: totalAmount,
+        amountPaid: amountPaid,
+        paymentMethod: 'Import Sage',
+        warehouseId: 'PRINCIPAL',
+        createdBy: userName,
+      );
+
+      await _db.collection('transactions').add(tx.toMap());
+
+      if (amountPaid > 0) {
+        DocumentReference pRef = _db.collection('payments').doc();
+        await pRef.set({
+          'id': pRef.id,
+          'tierId': tier.id,
+          'tierName': tier.name,
+          'tierType': tier.type.toString().split('.').last,
+          'amount': amountPaid,
+          'date': Timestamp.fromDate(txDate),
+          'method': 'Import Sage',
+          'reference': 'PREV-$invoiceRef',
+          'invoiceNumber': invoiceRef,
+          'createdBy': userName,
+        });
+      }
+      count++;
+    }
+    return count;
+  }
+
   Stream<List<DailyClosing>> getClosings() {
     return _db.collection('closings').orderBy('date', descending: true).snapshots().map((snap) =>
         snap.docs.map((doc) => DailyClosing.fromMap(doc.data(), doc.id)).toList());
@@ -748,23 +879,78 @@ class FirestoreService {
 
   Future<List<Map<String, dynamic>>> getUnpaidReport({required TierType tierType, required DateTime start, required DateTime end}) async {
     final transType = tierType == TierType.client ? TransactionType.sale : TransactionType.purchase;
+    final returnType = tierType == TierType.client ? TransactionType.saleReturn : TransactionType.purchaseReturn;
+
+    // Récupération des factures principales
     final allTxsSnap = await _db.collection('transactions').where('type', isEqualTo: transType.toString().split('.').last).get();
+    // Récupération des règlements
     final allPaysSnap = await _db.collection('payments').where('tierType', isEqualTo: tierType == TierType.client ? 'client' : 'supplier').get();
+    // Récupération des retours (avoirs) qui agissent comme des crédits
+    final allReturnsSnap = await _db.collection('transactions').where('type', isEqualTo: returnType.toString().split('.').last).get();
+
+    // Récupération des avances non encore consommées (uniquement pour les clients)
+    List<Advance> allAdvances = [];
+    if (tierType == TierType.client) {
+      final advancesSnap = await _db.collection('advances').where('isUsed', isEqualTo: false).get();
+      allAdvances = advancesSnap.docs.map((d) => Advance.fromMap(d.data(), d.id)).toList();
+    }
+
     List<AppTransaction> allTxs = allTxsSnap.docs.map((d) => AppTransaction.fromMap(d.data(), d.id)).toList();
     List<Payment> allPays = allPaysSnap.docs.map((d) => Payment.fromMap(d.data(), d.id)).toList();
+    List<AppTransaction> allReturns = allReturnsSnap.docs.map((d) => AppTransaction.fromMap(d.data(), d.id)).toList();
+
     allTxs.sort((a, b) => a.date.compareTo(b.date));
-    Map<String, double> creditsByTier = {};
-    for (var p in allPays) creditsByTier[p.tierId] = (creditsByTier[p.tierId] ?? 0) + p.amount;
+
+    Map<String, double> globalCreditsByTier = {};
+    Map<String, double> specificCreditsByInvoice = {};
+
+    // 1. Ventiler les règlements : par facture ou global
+    for (var p in allPays) {
+      if (p.invoiceNumber != null && p.invoiceNumber!.isNotEmpty) {
+        specificCreditsByInvoice[p.invoiceNumber!] = (specificCreditsByInvoice[p.invoiceNumber!] ?? 0) + p.amount;
+      } else {
+        globalCreditsByTier[p.tierId] = (globalCreditsByTier[p.tierId] ?? 0) + p.amount;
+      }
+    }
+
+    // 2. Ajouter les avoirs au pool global
+    for (var ret in allReturns) {
+      globalCreditsByTier[ret.tierId] = (globalCreditsByTier[ret.tierId] ?? 0) + ret.netToPay.abs();
+    }
+
+    // 3. Ajouter les avances au pool global
+    for (var adv in allAdvances) {
+      globalCreditsByTier[adv.tierId] = (globalCreditsByTier[adv.tierId] ?? 0) + adv.amount;
+    }
 
     List<Map<String, dynamic>> results = [];
-    Map<String, double> remainingCredits = Map.from(creditsByTier);
+    Map<String, double> remainingGlobalCredits = Map.from(globalCreditsByTier);
+
     for (var t in allTxs) {
-      double creditTier = remainingCredits[t.tierId] ?? 0;
-      double amountApplied = creditTier >= t.netToPay ? t.netToPay : creditTier;
-      double reste = t.netToPay - amountApplied;
-      remainingCredits[t.tierId] = creditTier - amountApplied;
-      if (reste > 10 && t.date.isAfter(start.subtract(const Duration(days: 1))) && t.date.isBefore(end.add(const Duration(days: 1)))) {
-        results.add({'transaction': t, 'totalPaid': amountApplied, 'remaining': reste});
+      double amountToCover = t.netToPay;
+
+      // Priorité 1 : Règlement spécifiquement lié au numéro de facture (très courant dans l'import Sage)
+      double specificPaid = specificCreditsByInvoice[t.invoiceNumber] ?? 0;
+
+      // Priorité 2 : Compléter avec le pool global du client (FIFO)
+      double resteAPayer = amountToCover - specificPaid;
+      double globalApplied = 0;
+
+      if (resteAPayer > 0) {
+        double available = remainingGlobalCredits[t.tierId] ?? 0;
+        globalApplied = available >= resteAPayer ? resteAPayer : available;
+        remainingGlobalCredits[t.tierId] = available - globalApplied;
+      }
+
+      double totalPaid = specificPaid + globalApplied;
+      double resteFinal = amountToCover - totalPaid;
+
+      if (resteFinal > 10 && t.date.isAfter(start.subtract(const Duration(days: 1))) && t.date.isBefore(end.add(const Duration(days: 1)))) {
+        results.add({
+          'transaction': t,
+          'totalPaid': totalPaid,
+          'remaining': resteFinal
+        });
       }
     }
     return results;

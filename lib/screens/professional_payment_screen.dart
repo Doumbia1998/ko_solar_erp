@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../services/firestore_service.dart';
@@ -40,7 +39,13 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
   @override
   Widget build(BuildContext context) {
     final service = Provider.of<FirestoreService>(context);
+    final user = Provider.of<AppUser?>(context);
     final isClient = widget.type == TierType.client;
+
+    // Vérification des permissions
+    final isAdmin = user?.role == UserRole.admin;
+    final canDelete = isAdmin || user?.canDeletePayment == true;
+    final canAdd = isAdmin || (isClient ? user?.canAddClientPayment == true : user?.canAddSupplierPayment == true);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -51,9 +56,9 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
         foregroundColor: Colors.white,
         elevation: 2,
         actions: [
-          _toolbarButton(Icons.settings, 'Paramètres', onTap: () => _showJournalConfig(context, service)),
+          if (isAdmin) _toolbarButton(Icons.settings, 'Paramètres', onTap: () => _showJournalConfig(context, service)),
           const SizedBox(width: 10),
-          if (_selectedTier != null)
+          if (_selectedTier != null && canAdd)
             _toolbarButton(Icons.playlist_add_check, 'Sélectionner',
               onTap: () => _openMaturitySelection(context, service)),
           const SizedBox(width: 10),
@@ -185,32 +190,33 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
                   ),
                 ),
 
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  color: const Color(0xFFE2E8F0),
-                  child: Row(
-                    children: [
-                      _inputBox('Date', 90, controller: _dateController),
-                      _inputBox('N° Pièce', 140, controller: _pieceController),
-                      _inputBox('Libellé', 300, controller: _libelleController),
-                      StreamBuilder<List<PaymentMethodConfig>>(
-                        stream: service.getPaymentMethodConfigs(),
-                        builder: (context, snapshot) {
-                          final methods = snapshot.data ?? [];
-                          if (_selectedMethod == null && methods.isNotEmpty) _selectedMethod = methods.first.name;
-                          return _dropdownBox('Mode', 160, _selectedMethod ?? '', methods.map((m) => m.name).toList(), (val) => setState(() => _selectedMethod = val!));
-                        },
-                      ),
-                      _inputBox('Montant', 150, controller: _montantController, isNumeric: true),
-                      const Spacer(),
-                      ElevatedButton(
-                        onPressed: _saveFastEntry,
-                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2F855A), foregroundColor: Colors.white, minimumSize: const Size(120, 40)),
-                        child: const Text('ENREGISTRER'),
-                      ),
-                    ],
+                if (canAdd)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    color: const Color(0xFFE2E8F0),
+                    child: Row(
+                      children: [
+                        _inputBox('Date', 90, controller: _dateController),
+                        _inputBox('N° Pièce', 140, controller: _pieceController),
+                        _inputBox('Libellé', 300, controller: _libelleController),
+                        StreamBuilder<List<PaymentMethodConfig>>(
+                          stream: service.getPaymentMethodConfigs(),
+                          builder: (context, snapshot) {
+                            final methods = snapshot.data ?? [];
+                            if (_selectedMethod == null && methods.isNotEmpty) _selectedMethod = methods.first.name;
+                            return _dropdownBox('Mode', 160, _selectedMethod ?? '', methods.map((m) => m.name).toList(), (val) => setState(() => _selectedMethod = val!));
+                          },
+                        ),
+                        _inputBox('Montant', 150, controller: _montantController, isNumeric: true),
+                        const Spacer(),
+                        ElevatedButton(
+                          onPressed: _saveFastEntry,
+                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2F855A), foregroundColor: Colors.white, minimumSize: const Size(120, 40)),
+                          child: const Text('ENREGISTRER'),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
 
                 Expanded(
                   child: Container(
@@ -252,27 +258,31 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
                                         ],
                                         rows: entries.map((e) {
                                           if (e is Payment) {
-                                            return DataRow(cells: [
-                                              DataCell(Text(DateFormat('dd/MM/yy').format(e.date))),
-                                              DataCell(Text(e.reference)),
-                                              DataCell(Text(e.invoiceNumber != null ? 'ENC FA${e.invoiceNumber}' : e.reference)),
-                                              DataCell(Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  Text(e.method),
-                                                  if (e.createdBy.isNotEmpty)
-                                                    Text('Fait par: ${e.createdBy}', style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.blueGrey)),
-                                                ],
-                                              )),
-                                              DataCell(Text(_format.format(e.amount).replaceAll(',', ' '), style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold))),
-                                              DataCell(_rowJournalDropdown(e, service)),
-                                              DataCell(IconButton(icon: const Icon(Icons.delete, color: Colors.red, size: 18), onPressed: () async {
-                                                final auth = Provider.of<AuthService>(context, listen: false);
-                                                final user = await auth.getAppUser((await auth.user.first)!.uid);
-                                                await service.deletePayment(e.id, user?.displayName ?? 'Admin');
-                                              })),
-                                            ]);
+                                            final isAdvance = e.method == 'Utilisation Avance';
+                                            return DataRow(
+                                              color: isAdvance ? WidgetStateProperty.all(Colors.blue.shade50) : null,
+                                              cells: [
+                                                DataCell(Text(DateFormat('dd/MM/yy').format(e.date))),
+                                                DataCell(Text(e.reference)),
+                                                DataCell(Text(e.invoiceNumber != null ? 'ENC FA${e.invoiceNumber}' : e.reference)),
+                                                DataCell(Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    Text(e.method, style: TextStyle(fontWeight: isAdvance ? FontWeight.bold : FontWeight.normal, color: isAdvance ? Colors.blue.shade800 : Colors.black)),
+                                                    if (e.createdBy.isNotEmpty)
+                                                      Text('Fait par: ${e.createdBy}', style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.blueGrey)),
+                                                  ],
+                                                )),
+                                                DataCell(Text(_format.format(e.amount).replaceAll(',', ' '), style: TextStyle(color: isAdvance ? Colors.blue.shade800 : Colors.blue, fontWeight: FontWeight.bold))),
+                                                DataCell(_rowJournalDropdown(e, service, isAdmin)),
+                                                DataCell(canDelete ? IconButton(icon: const Icon(Icons.delete, color: Colors.red, size: 18), onPressed: () async {
+                                                  final auth = Provider.of<AuthService>(context, listen: false);
+                                                  final user = await auth.getAppUser((await auth.user.first)!.uid);
+                                                  await service.deletePayment(e.id, user?.displayName ?? 'Admin');
+                                                }) : const SizedBox()),
+                                              ],
+                                            );
                                           } else {
                                             final t = e as AppTransaction;
                                             return DataRow(color: WidgetStateProperty.all(Colors.red.shade50), cells: [
@@ -307,21 +317,32 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
                 if (_selectedTier != null)
                   StreamBuilder<List<Payment>>(
                     stream: service.getPayments(tierId: _selectedTier!.id),
-                    builder: (context, snapshot) {
-                      final payments = snapshot.data ?? [];
-                      double total = payments.fold(0, (sum, p) => sum + p.amount);
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-                        color: const Color(0xFFF0FFF4),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            _summary('Total règlement', total),
-                            _summary('Solde', 0, isBold: true),
-                            const SizedBox(width: 80),
-                            ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text('FERMER')),
-                          ],
-                        ),
+                    builder: (context, snapshotPay) {
+                      return StreamBuilder<List<AppTransaction>>(
+                        stream: service.getTransactions(),
+                        builder: (context, snapshotTrans) {
+                          final payments = snapshotPay.data ?? [];
+                          final transactions = (snapshotTrans.data ?? []).where((t) => t.tierId == _selectedTier!.id).toList();
+
+                          double totalPaid = payments.fold(0, (sum, p) => sum + p.amount);
+                          double totalDue = transactions.fold(0, (sum, t) => sum + (t.type == TransactionType.quote ? 0 : t.netToPay));
+                          double balance = totalDue - totalPaid;
+
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
+                            color: const Color(0xFFF0FFF4),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                _summary('Total réglé', totalPaid),
+                                _summary('Total dû', totalDue),
+                                _summary('Solde Restant', balance, isBold: true, color: balance > 10 ? Colors.red : Colors.black),
+                                const SizedBox(width: 80),
+                                ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text('FERMER')),
+                              ],
+                            ),
+                          );
+                        }
                       );
                     }
                   ),
@@ -333,7 +354,7 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
     );
   }
 
-  Widget _rowJournalDropdown(Payment p, FirestoreService service) {
+  Widget _rowJournalDropdown(Payment p, FirestoreService service, bool isAdmin) {
     return StreamBuilder<List<JournalConfig>>(
       stream: service.getJournalConfigs(),
       builder: (context, snapshot) {
@@ -343,9 +364,9 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
             value: p.journalCode ?? 'CA',
             style: const TextStyle(fontSize: 12, color: Colors.black),
             items: configs.map((c) => DropdownMenuItem(value: c.code, child: Text(c.code))).toList(),
-            onChanged: (val) async {
+            onChanged: isAdmin ? (val) async {
               await service.updatePaymentJournal(p.id, val!);
-            },
+            } : null,
           ),
         );
       },
@@ -416,8 +437,8 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
     return TextButton.icon(onPressed: onTap ?? () {}, icon: Icon(icon, color: Colors.white, size: 20), label: Text(label, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)));
   }
 
-  Widget _summary(String label, double val, {bool isBold = false}) {
-    return Padding(padding: const EdgeInsets.only(left: 60), child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)), Text(_format.format(val).replaceAll(',', ' '), style: TextStyle(fontWeight: isBold ? FontWeight.bold : FontWeight.w700, fontSize: 18, color: isBold ? Colors.black : Colors.green.shade800))]));
+  Widget _summary(String label, double val, {bool isBold = false, Color? color}) {
+    return Padding(padding: const EdgeInsets.only(left: 60), child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)), Text(_format.format(val).replaceAll(',', ' '), style: TextStyle(fontWeight: isBold ? FontWeight.bold : FontWeight.w700, fontSize: 18, color: color ?? (isBold ? Colors.black : Colors.green.shade800)))]));
   }
 
   void _showJournalConfig(BuildContext context, FirestoreService service) {
@@ -548,7 +569,7 @@ class _MaturitySelectionDialogState extends State<MaturitySelectionDialog> {
   final Map<String, TextEditingController> _controllers = {};
   double _montantRegle = 0;
   final _montantRegleController = TextEditingController();
-  String? _selectedMode; // Nouveau
+  String? _selectedMode;
 
   @override
   void dispose() {
@@ -658,7 +679,7 @@ class _MaturitySelectionDialogState extends State<MaturitySelectionDialog> {
                           headingRowHeight: 45,
                           dataRowHeight: 40,
                           columnSpacing: 35,
-                          headingRowColor: MaterialStateProperty.all(const Color(0xFFF1F3F4)),
+                          headingRowColor: WidgetStateProperty.all(const Color(0xFFF1F3F4)),
                           border: TableBorder.all(color: Colors.grey.shade200, width: 1),
                           columns: const [
                             DataColumn(label: Text('Échéance', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold))),
@@ -678,7 +699,7 @@ class _MaturitySelectionDialogState extends State<MaturitySelectionDialog> {
                             }
 
                             return DataRow(
-                              color: isReturn ? MaterialStateProperty.all(Colors.red.shade50) : null,
+                              color: isReturn ? WidgetStateProperty.all(Colors.red.shade50) : null,
                               cells: [
                                 DataCell(Text(DateFormat('dd/MM/yy').format(t.date), style: const TextStyle(fontSize: 13))),
                                 DataCell(Text(t.invoiceNumber, style: const TextStyle(fontSize: 13))),

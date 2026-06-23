@@ -18,21 +18,22 @@ class _LoginScreenState extends State<LoginScreen> {
   void _resetPassword() async {
     final email = _emailController.text.trim();
     if (email.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Veuillez saisir votre email pour réinitialiser le mot de passe')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Veuillez saisir votre email')));
       return;
     }
 
     try {
-      await Provider.of<AuthService>(context, listen: false).sendPasswordResetEmail(email);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Email de réinitialisation envoyé ! Vérifiez votre boîte de réception.')),
+      await Provider.of<AuthService>(context, listen: false).requestPasswordReset(email);
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Demande envoyée'),
+          content: const Text('Votre demande de réinitialisation a été envoyée à l\'administrateur. Veuillez le contacter pour obtenir votre nouveau mot de passe temporaire.'),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+        ),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur : ${e.toString()}')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
     }
   }
 

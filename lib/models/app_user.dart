@@ -5,26 +5,43 @@ class AppUser {
   final String email;
   final String displayName;
   final UserRole role;
-  final String? warehouseId; // Dépôt assigné pour le magasinier
+  final String? warehouseId;
 
-  // Permissions Granulaires
+  // Permissions Commerciales
   final bool canViewPurchases;
   final bool canViewSales;
   final bool canDeleteSales;
   final bool canViewProducts;
   final bool canEditProducts;
   final bool canDeleteProducts;
-  final bool canViewAccounting;
   final bool canManageUsers;
   
-  // Nouvelles permissions demandées
-  final bool canViewTiers; // Clients/Fournisseurs
+  // Tiers & Transport
+  final bool canViewClients;
+  final bool canViewSuppliers;
   final bool canEditTiers;
   final bool canDeleteTiers;
   final bool canViewTransport;
   final bool canEditTransport;
 
-  // Nouveaux modules
+  // Règlements
+  final bool canViewPayments;
+  final bool canAddClientPayment;
+  final bool canAddSupplierPayment;
+  final bool canDeletePayment;
+
+  // Comptabilité Détaillée (Le découpage qui marche)
+  final bool canViewAccounting;
+  final bool canViewUnpaidReport;
+  final bool canViewPlanComptable;
+  final bool canViewJournalComptable;
+  final bool canViewTrialBalance;
+  final bool canViewAgedBalance;
+  final bool canViewCashControl;
+  final bool canManageFiscalYears;
+  final bool canManageReconciliation;
+
+  // Autres Modules
   final bool canViewAudit;
   final bool canViewExpenses;
   final bool canViewAdvances;
@@ -47,13 +64,26 @@ class AppUser {
     this.canViewProducts = true,
     this.canEditProducts = false,
     this.canDeleteProducts = false,
-    this.canViewAccounting = false,
     this.canManageUsers = false,
-    this.canViewTiers = true,
+    this.canViewClients = true,
+    this.canViewSuppliers = true,
     this.canEditTiers = false,
     this.canDeleteTiers = false,
     this.canViewTransport = false,
     this.canEditTransport = false,
+    this.canViewPayments = false,
+    this.canAddClientPayment = false,
+    this.canAddSupplierPayment = false,
+    this.canDeletePayment = false,
+    this.canViewAccounting = false,
+    this.canViewUnpaidReport = false,
+    this.canViewPlanComptable = false,
+    this.canViewJournalComptable = false,
+    this.canViewTrialBalance = false,
+    this.canViewAgedBalance = false,
+    this.canViewCashControl = false,
+    this.canManageFiscalYears = false,
+    this.canManageReconciliation = false,
     this.canViewAudit = false,
     this.canViewExpenses = false,
     this.canViewAdvances = false,
@@ -78,13 +108,26 @@ class AppUser {
       'canViewProducts': canViewProducts,
       'canEditProducts': canEditProducts,
       'canDeleteProducts': canDeleteProducts,
-      'canViewAccounting': canViewAccounting,
       'canManageUsers': canManageUsers,
-      'canViewTiers': canViewTiers,
+      'canViewClients': canViewClients,
+      'canViewSuppliers': canViewSuppliers,
       'canEditTiers': canEditTiers,
       'canDeleteTiers': canDeleteTiers,
       'canViewTransport': canViewTransport,
       'canEditTransport': canEditTransport,
+      'canViewPayments': canViewPayments,
+      'canAddClientPayment': canAddClientPayment,
+      'canAddSupplierPayment': canAddSupplierPayment,
+      'canDeletePayment': canDeletePayment,
+      'canViewAccounting': canViewAccounting,
+      'canViewUnpaidReport': canViewUnpaidReport,
+      'canViewPlanComptable': canViewPlanComptable,
+      'canViewJournalComptable': canViewJournalComptable,
+      'canViewTrialBalance': canViewTrialBalance,
+      'canViewAgedBalance': canViewAgedBalance,
+      'canViewCashControl': canViewCashControl,
+      'canManageFiscalYears': canManageFiscalYears,
+      'canManageReconciliation': canManageReconciliation,
       'canViewAudit': canViewAudit,
       'canViewExpenses': canViewExpenses,
       'canViewAdvances': canViewAdvances,
@@ -113,13 +156,26 @@ class AppUser {
       canViewProducts: map['canViewProducts'] ?? true,
       canEditProducts: map['canEditProducts'] ?? false,
       canDeleteProducts: map['canDeleteProducts'] ?? false,
-      canViewAccounting: map['canViewAccounting'] ?? false,
       canManageUsers: map['canManageUsers'] ?? false,
-      canViewTiers: map['canViewTiers'] ?? true,
+      canViewClients: map['canViewClients'] ?? true,
+      canViewSuppliers: map['canViewSuppliers'] ?? true,
       canEditTiers: map['canEditTiers'] ?? false,
       canDeleteTiers: map['canDeleteTiers'] ?? false,
       canViewTransport: map['canViewTransport'] ?? false,
       canEditTransport: map['canEditTransport'] ?? false,
+      canViewPayments: map['canViewPayments'] ?? false,
+      canAddClientPayment: map['canAddClientPayment'] ?? false,
+      canAddSupplierPayment: map['canAddSupplierPayment'] ?? false,
+      canDeletePayment: map['canDeletePayment'] ?? false,
+      canViewAccounting: map['canViewAccounting'] ?? false,
+      canViewUnpaidReport: map['canViewUnpaidReport'] ?? false,
+      canViewPlanComptable: map['canViewPlanComptable'] ?? false,
+      canViewJournalComptable: map['canViewJournalComptable'] ?? false,
+      canViewTrialBalance: map['canViewTrialBalance'] ?? false,
+      canViewAgedBalance: map['canViewAgedBalance'] ?? false,
+      canViewCashControl: map['canViewCashControl'] ?? false,
+      canManageFiscalYears: map['canManageFiscalYears'] ?? false,
+      canManageReconciliation: map['canManageReconciliation'] ?? false,
       canViewAudit: map['canViewAudit'] ?? false,
       canViewExpenses: map['canViewExpenses'] ?? false,
       canViewAdvances: map['canViewAdvances'] ?? false,

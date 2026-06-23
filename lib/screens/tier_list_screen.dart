@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../models/tier.dart';
 import '../models/transaction.dart';
 import '../models/payment.dart';
+import '../models/app_user.dart';
 import '../services/firestore_service.dart';
 import 'tier_form_screen.dart';
 import 'tier_detail_screen.dart';
@@ -32,8 +33,13 @@ class _TierListScreenState extends State<TierListScreen> {
   @override
   Widget build(BuildContext context) {
     final firestoreService = Provider.of<FirestoreService>(context);
+    final currentUser = Provider.of<AppUser?>(context);
     final isClient = widget.type == TierType.client;
     final title = isClient ? 'Clients' : 'Fournisseurs';
+
+    final isAdmin = currentUser?.role == UserRole.admin;
+    final canEdit = isAdmin || currentUser?.canEditTiers == true;
+    final canDelete = isAdmin || currentUser?.canDeleteTiers == true;
 
     return Scaffold(
       appBar: AppBar(
@@ -72,7 +78,7 @@ class _TierListScreenState extends State<TierListScreen> {
                         final payments = snapshotPay.data ?? [];
                         final allTiers = snapshotTiers.data ?? [];
 
-                        // Filtrer les transactions par type (Vente pour Client, Achat pour Fournisseur)
+                        // Filtrer les transactions par type
                         final relevantTrans = transactions.where((t) => isClient ? t.type == TransactionType.sale : t.type == TransactionType.purchase).toList();
                         
                         double totalGlobalHT = relevantTrans.fold(0.0, (sum, t) => sum + t.totalHT);
@@ -88,14 +94,6 @@ class _TierListScreenState extends State<TierListScreen> {
                             t.name.toLowerCase().contains(_searchQuery) || 
                             t.phone.contains(_searchQuery)
                           ).toList();
-                          // Trier pour mettre les correspondances exactes au début
-                          displayedTiers.sort((a, b) {
-                            bool aStarts = a.name.toLowerCase().startsWith(_searchQuery);
-                            bool bStarts = b.name.toLowerCase().startsWith(_searchQuery);
-                            if (aStarts && !bStarts) return -1;
-                            if (!aStarts && bStarts) return 1;
-                            return a.name.compareTo(b.name);
-                          });
                         }
 
                         return Column(
@@ -131,14 +129,16 @@ class _TierListScreenState extends State<TierListScreen> {
                                         trailing: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            IconButton(
-                                              icon: const Icon(Icons.edit, color: Colors.blue),
-                                              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => TierFormScreen(type: widget.type, tier: tier))),
-                                            ),
-                                            IconButton(
-                                              icon: const Icon(Icons.delete, color: Colors.red),
-                                              onPressed: () => _handleDeleteTier(context, firestoreService, tier, transactions, payments),
-                                            ),
+                                            if (canEdit)
+                                              IconButton(
+                                                icon: const Icon(Icons.edit, color: Colors.blue),
+                                                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => TierFormScreen(type: widget.type, tier: tier))),
+                                              ),
+                                            if (canDelete)
+                                              IconButton(
+                                                icon: const Icon(Icons.delete, color: Colors.red),
+                                                onPressed: () => _handleDeleteTier(context, firestoreService, tier, transactions, payments),
+                                              ),
                                           ],
                                         ),
                                         onTap: () {
@@ -163,11 +163,11 @@ class _TierListScreenState extends State<TierListScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: (isAdmin || canEdit) ? FloatingActionButton(
         onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => TierFormScreen(type: widget.type))),
         backgroundColor: const Color(0xFFE3F2FD),
         child: const Icon(Icons.add, color: Color(0xFF1A237E)),
-      ),
+      ) : null,
     );
   }
 
@@ -182,28 +182,17 @@ class _TierListScreenState extends State<TierListScreen> {
   }
 
   void _handleDeleteTier(BuildContext context, FirestoreService service, Tier tier, List<AppTransaction> transactions, List<Payment> payments) {
-    // Vérifier si le tiers a des transactions
     final hasTransactions = transactions.any((t) => t.tierId == tier.id);
     final hasPayments = payments.any((p) => p.tierId == tier.id);
 
     if (hasTransactions || hasPayments) {
-      String reference = "";
-      if (hasTransactions) {
-        reference = "la Facture N°${transactions.firstWhere((t) => t.tierId == tier.id).invoiceNumber}";
-      } else {
-        reference = "un Règlement du ${DateFormat('dd/MM/yyyy').format(payments.firstWhere((p) => p.tierId == tier.id).date)}";
-      }
-
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text("Suppression impossible", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-          content: Text("Le compte tiers '${tier.name}' est référencé dans $reference.\n\nVous ne pouvez pas supprimer ce tiers tant que ses documents liés existent."),
+          content: Text("Le compte tiers '${tier.name}' possède des opérations enregistrées.\n\nVous ne pouvez pas supprimer ce tiers pour des raisons de sécurité comptable."),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("OK"),
-            ),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK")),
           ],
         ),
       );

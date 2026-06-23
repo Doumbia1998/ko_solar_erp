@@ -43,6 +43,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/advance.dart';
 import 'aged_balance_screen.dart';
+import 'cash_control_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -68,10 +69,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final canViewSales = isAdmin || currentUser.canViewSales;
     final canViewTransport = isAdmin || currentUser.canViewTransport;
     final canViewAccounting = isAdmin || currentUser.canViewAccounting;
-    final canViewTiers = isAdmin || currentUser.canViewTiers;
+    final canViewClients = isAdmin || currentUser.canViewClients;
+    final canViewSuppliers = isAdmin || currentUser.canViewSuppliers;
     final canManageUsers = isAdmin || currentUser.canManageUsers;
 
-    // Nouvelles permissions
+    // Autres modules
     final canViewAudit = isAdmin || currentUser.canViewAudit;
     final canViewExpenses = isAdmin || currentUser.canViewExpenses;
     final canViewAdvances = isAdmin || currentUser.canViewAdvances;
@@ -81,6 +83,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final canViewDeliveries = isAdmin || currentUser.canViewDeliveries;
     final canManagePayroll = isAdmin || currentUser.canManagePayroll;
     final canImportExport = isAdmin || currentUser.canImportExport;
+
+    // Règlements
+    final canViewPayments = isAdmin || currentUser.canViewPayments;
 
     List<Widget> pages;
     List<BottomNavigationBarItem> navItems;
@@ -172,15 +177,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
             if (isAdmin || isStorekeeper)
               _buildDrawerTile(context, Icons.warehouse, 'Gestion des Dépôts', Colors.brown, const WarehouseListScreen()),
             const Divider(),
-            if (isAdmin || canViewAccounting) ...[
+            if (canViewPayments) ...[
               _buildDrawerTile(context, Icons.payments, 'Règlements', Colors.green, const PaymentScreen()),
-              _buildDrawerTile(context, Icons.money_off, 'État des Impayés', Colors.red, const UnpaidReportScreen()),
-              if (isAdmin) _buildDrawerTile(context, Icons.lock_clock, 'Clôture de Journée', Colors.red, const DailyClosingScreen()),
             ],
-            if (canViewTiers) ...[
+            if (canViewAccounting) ...[
+               _buildDrawerTile(context, Icons.money_off, 'État des Impayés', Colors.red, const UnpaidReportScreen()),
+               if (isAdmin) _buildDrawerTile(context, Icons.lock_clock, 'Clôture de Journée', Colors.red, const DailyClosingScreen()),
+            ],
+            if (canViewClients || canViewSuppliers) ...[
               const Divider(),
-              _buildDrawerTile(context, Icons.people, 'Clients', Colors.indigo, const TierListScreen(type: TierType.client)),
-              _buildDrawerTile(context, Icons.business_center, 'Fournisseurs', Colors.teal, const TierListScreen(type: TierType.supplier)),
+              if (canViewClients) _buildDrawerTile(context, Icons.people, 'Clients', Colors.indigo, const TierListScreen(type: TierType.client)),
+              if (canViewSuppliers) _buildDrawerTile(context, Icons.business_center, 'Fournisseurs', Colors.teal, const TierListScreen(type: TierType.supplier)),
             ],
             if (canViewAccounting) ...[
               const Divider(),
@@ -188,6 +195,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               _buildDrawerTile(context, Icons.menu_book, 'Journal Comptable', Colors.brown, const JournalScreen()),
               _buildDrawerTile(context, Icons.receipt_long, 'Balance des Comptes', Colors.teal, const TrialBalanceScreen()),
               _buildDrawerTile(context, Icons.history, 'Balance Agée Clients', Colors.orange, const AgedBalanceScreen()),
+              _buildDrawerTile(context, Icons.account_balance_wallet, 'Contrôle de Caisse', Colors.green, const CashControlScreen()),
               _buildDrawerTile(context, Icons.date_range, 'Exercices Comptables', Colors.blueAccent, const FiscalYearScreen()),
               _buildDrawerTile(context, Icons.account_balance_wallet, 'Rapprochement Bancaire', Colors.green, const ReconciliationScreen()),
             ],
@@ -364,6 +372,9 @@ class DashboardContent extends StatelessWidget {
     final canViewTransport = isAdmin || currentUser.canViewTransport;
     final canViewAdvances = isAdmin || currentUser.canViewAdvances;
 
+    final canViewPayments = isAdmin || currentUser.canViewPayments;
+    final canViewAccounting = isAdmin || currentUser.canViewAccounting;
+
     return StreamBuilder<List<AppTransaction>>(
       stream: firestoreService.getTransactions(limit: 50),
       builder: (context, snapshotTrans) {
@@ -451,7 +462,7 @@ class DashboardContent extends StatelessWidget {
                                 ],
                               ),
                               const SizedBox(height: 30),
-                              if (canViewSales) ...[
+                              if (canViewSales || canViewPayments) ...[
                                 const Text('SITUATION CLIENTS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, letterSpacing: 1.1, fontSize: 13)),
                                 const SizedBox(height: 15),
                                 GridView.count(
@@ -462,23 +473,26 @@ class DashboardContent extends StatelessWidget {
                                   mainAxisSpacing: 10,
                                   childAspectRatio: MediaQuery.of(context).size.width > 600 ? 2.5 : 1.4,
                                   children: [
-                                    GestureDetector(
-                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransactionListScreen(type: TransactionType.sale))),
-                                      child: DashboardCard(title: 'CHIFFRE D\'AFFAIRE', value: '${currencyFormat.format(caSales)} F', icon: Icons.trending_up, iconColor: Colors.blue),
-                                    ),
-                                    GestureDetector(
-                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen())),
-                                      child: DashboardCard(title: 'ENCAISSÉ', value: '${currencyFormat.format(totalEncaisseSales)} F', icon: Icons.check_circle_outline, iconColor: Colors.green),
-                                    ),
-                                    GestureDetector(
-                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TierListScreen(type: TierType.client))),
-                                      child: DashboardCard(title: 'IMPAYÉS CLIENTS', value: '${currencyFormat.format(totalImpayesSales < 0 ? 0 : totalImpayesSales)} F', icon: Icons.warning_amber_rounded, iconColor: Colors.red),
-                                    ),
+                                    if (canViewSales)
+                                      GestureDetector(
+                                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransactionListScreen(type: TransactionType.sale))),
+                                        child: DashboardCard(title: 'CHIFFRE D\'AFFAIRE', value: '${currencyFormat.format(caSales)} F', icon: Icons.trending_up, iconColor: Colors.blue),
+                                      ),
+                                    if (canViewPayments)
+                                      GestureDetector(
+                                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen())),
+                                        child: DashboardCard(title: 'ENCAISSÉ', value: '${currencyFormat.format(totalEncaisseSales)} F', icon: Icons.check_circle_outline, iconColor: Colors.green),
+                                      ),
+                                    if (canViewSales)
+                                      GestureDetector(
+                                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TierListScreen(type: TierType.client))),
+                                        child: DashboardCard(title: 'IMPAYÉS CLIENTS', value: '${currencyFormat.format(totalImpayesSales < 0 ? 0 : totalImpayesSales)} F', icon: Icons.warning_amber_rounded, iconColor: Colors.red),
+                                      ),
                                   ],
                                 ),
                               ],
                               const SizedBox(height: 35),
-                              if (canViewPurchases) ...[
+                              if (canViewPurchases || canViewPayments) ...[
                                 const Text('SITUATION FOURNISSEURS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, letterSpacing: 1.1, fontSize: 13)),
                                 const SizedBox(height: 15),
                                 GridView.count(
@@ -489,27 +503,31 @@ class DashboardContent extends StatelessWidget {
                                   mainAxisSpacing: 10,
                                   childAspectRatio: MediaQuery.of(context).size.width > 600 ? 3.5 : 1.4,
                                   children: [
-                                    GestureDetector(
-                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransactionListScreen(type: TransactionType.purchase))),
-                                      child: DashboardCard(title: 'TOTAL ACHATS', value: '${currencyFormat.format(caPurchases)} F', icon: Icons.shopping_cart, iconColor: Colors.teal),
-                                    ),
-                                    GestureDetector(
-                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TierListScreen(type: TierType.supplier))),
-                                      child: DashboardCard(title: 'DETTES FOURN.', value: '${currencyFormat.format(totalImpayesPurchases < 0 ? 0 : totalImpayesPurchases)} F', icon: Icons.money_off, iconColor: Colors.orange),
-                                    ),
+                                    if (canViewPurchases)
+                                      GestureDetector(
+                                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TransactionListScreen(type: TransactionType.purchase))),
+                                        child: DashboardCard(title: 'TOTAL ACHATS', value: '${currencyFormat.format(caPurchases)} F', icon: Icons.shopping_cart, iconColor: Colors.teal),
+                                      ),
+                                    if (canViewPurchases)
+                                      GestureDetector(
+                                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TierListScreen(type: TierType.supplier))),
+                                        child: DashboardCard(title: 'DETTES FOURN.', value: '${currencyFormat.format(totalImpayesPurchases < 0 ? 0 : totalImpayesPurchases)} F', icon: Icons.money_off, iconColor: Colors.orange),
+                                      ),
                                   ],
                                 ),
                               ],
                               const SizedBox(height: 35),
-                              const Text('SITUATION TRÉSORERIE', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, letterSpacing: 1.1, fontSize: 13)),
-                              const SizedBox(height: 15),
-                              SizedBox(
-                                width: MediaQuery.of(context).size.width > 600 ? 300 : double.infinity,
-                                child: GestureDetector(
-                                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen())),
-                                  child: DashboardCard(title: 'SOLDE CAISSE', value: '${currencyFormat.format(soldeCaisse)} F', icon: Icons.account_balance_wallet, iconColor: Colors.indigo),
+                              if (canViewAccounting || canViewPayments) ...[
+                                const Text('SITUATION TRÉSORERIE', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, letterSpacing: 1.1, fontSize: 13)),
+                                const SizedBox(height: 15),
+                                SizedBox(
+                                  width: MediaQuery.of(context).size.width > 600 ? 300 : double.infinity,
+                                  child: GestureDetector(
+                                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen())),
+                                    child: DashboardCard(title: 'SOLDE CAISSE', value: '${currencyFormat.format(soldeCaisse)} F', icon: Icons.account_balance_wallet, iconColor: Colors.indigo),
+                                  ),
                                 ),
-                              ),
+                              ],
                               if (canViewTransport) ...[
                                 const SizedBox(height: 35),
                                 const Text('TRANSPORT & LOGISTIQUE', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, letterSpacing: 1.1, fontSize: 13)),

@@ -23,7 +23,6 @@ class ReportService {
 
   static Future<void> generatePreparatoryInventory(List<Product> products, List<Warehouse> warehouses, List<Map<String, dynamic>> allStocks) async {
     final pdf = pw.Document();
-    final logo = await _getLogo();
     final dateStr = DateFormat('dd/MM/yyyy').format(DateTime.now());
     final timeStr = DateFormat('HH:mm:ss').format(DateTime.now());
 
@@ -42,7 +41,7 @@ class ReportService {
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.all(20),
-          header: (context) => _buildInventoryHeader(context, logo, 'Inventaire Preparatoire', w.name, dateStr, timeStr),
+          header: (context) => _buildInventoryHeader(context, 'Inventaire Preparatoire', w.name, dateStr, timeStr),
           build: (context) => [
             pw.TableHelper.fromTextArray(
               headers: ['Reference', 'Designation', 'Qte Stock', 'Qte Relevee', 'Ecart'],
@@ -80,7 +79,6 @@ class ReportService {
 
   static Future<void> generateInventoryBook(List<Product> products, List<Warehouse> warehouses, List<Map<String, dynamic>> allStocks) async {
     final pdf = pw.Document();
-    final logo = await _getLogo();
     final dateStr = DateFormat('dd/MM/yyyy').format(DateTime.now());
     final timeStr = DateFormat('HH:mm:ss').format(DateTime.now());
 
@@ -118,7 +116,7 @@ class ReportService {
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.all(20),
-          header: (context) => _buildInventoryHeader(context, logo, 'Livre d\'Inventaire (Valorise)', w.name, dateStr, timeStr),
+          header: (context) => _buildInventoryHeader(context, 'Livre d\'Inventaire (Valorise)', w.name, dateStr, timeStr),
           build: (context) => [
             pw.TableHelper.fromTextArray(
               headers: ['Reference', 'Designation', 'Qte Stock', 'P.R. Unit (CMUP)', 'P.R. Global'],
@@ -154,13 +152,13 @@ class ReportService {
     await Printing.layoutPdf(onLayout: (format) async => pdf.save());
   }
 
-  static pw.Widget _buildInventoryHeader(pw.Context context, pw.ImageProvider logo, String title, String warehouse, String date, String time) {
+  static pw.Widget _buildInventoryHeader(pw.Context context, String title, String warehouse, String date, String time) {
     return pw.Column(
       children: [
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Image(logo, width: 80),
+            pw.SizedBox(width: 80, child: pw.Text('K-O SOLAR', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10))),
             pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.end,
               children: [
@@ -201,7 +199,6 @@ class ReportService {
 
   static Future<void> generateDailyActivityReport(List<AppTransaction> txs, String type) async {
     final pdf = pw.Document();
-    final logo = await _getLogo();
     final now = DateTime.now();
     final dateStr = DateFormat('dd/MM/yyyy').format(now);
     final timeStr = DateFormat('HH:mm:ss').format(now);
@@ -215,7 +212,7 @@ class ReportService {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Image(logo, width: 80),
+                pw.SizedBox(width: 80, child: pw.Text('K-O SOLAR', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10))),
                 pw.Container(
                   decoration: pw.BoxDecoration(border: pw.Border.all(width: 1.5)),
                   padding: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 5),
@@ -321,7 +318,6 @@ class ReportService {
 
   static Future<void> generateDailyPaymentsReport(List<Payment> payments, String type, {String? tierName, DateTime? start, DateTime? end}) async {
     final pdf = pw.Document();
-    final logo = await _getLogo();
     final now = DateTime.now();
     final dateStr = DateFormat('dd/MM/yyyy').format(now);
 
@@ -339,7 +335,7 @@ class ReportService {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Image(logo, width: 80),
+                pw.SizedBox(width: 80, child: pw.Text('K-O SOLAR', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10))),
                 pw.Text(period, style: const pw.TextStyle(fontSize: 10)),
               ],
             ),
@@ -396,9 +392,7 @@ class ReportService {
 
   static Future<void> generateDailyDeliveryReport(List<AppTransaction> txs) async {
     final pdf = pw.Document();
-    final logo = await _getLogo();
-    final now = DateTime.now();
-    final dateStr = DateFormat('dd/MM/yyyy').format(now);
+    final dateStr = DateFormat('dd/MM/yyyy').format(DateTime.now());
 
     pdf.addPage(
       pw.MultiPage(
@@ -407,7 +401,7 @@ class ReportService {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Image(logo, width: 80),
+                pw.SizedBox(width: 80, child: pw.Text('K-O SOLAR', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10))),
                 pw.Text(dateStr),
               ],
             ),
@@ -444,7 +438,6 @@ class ReportService {
 
   static Future<void> generateTrialBalance(List<JournalEntry> entries) async {
     final pdf = pw.Document();
-    final logo = await _getLogo();
     final dateStr = DateFormat('dd/MM/yyyy').format(DateTime.now());
     final timeStr = DateFormat('HH:mm:ss').format(DateTime.now());
 

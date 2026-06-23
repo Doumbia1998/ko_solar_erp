@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/tier.dart';
+import '../models/app_user.dart';
 import 'professional_payment_screen.dart';
 
 class PaymentScreen extends StatelessWidget {
@@ -7,6 +9,11 @@ class PaymentScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final user = Provider.of<AppUser?>(context);
+    final isAdmin = user?.role == UserRole.admin;
+    final canAddClient = isAdmin || user?.canAddClientPayment == true;
+    final canAddSupplier = isAdmin || user?.canAddSupplierPayment == true;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('GESTION DES RÈGLEMENTS'),
@@ -17,21 +24,28 @@ class PaymentScreen extends StatelessWidget {
         padding: const EdgeInsets.all(24.0),
         child: Column(
           children: [
-            _buildBigButton(
-              context,
-              'Saisie des Règlements Clients',
-              Icons.person_add_alt_1,
-              Colors.blue.shade900,
-              () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ProfessionalPaymentScreen(type: TierType.client))),
-            ),
-            const SizedBox(height: 20),
-            _buildBigButton(
-              context,
-              'Saisie des Règlements Fournisseurs',
-              Icons.business_center,
-              Colors.teal.shade800,
-              () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ProfessionalPaymentScreen(type: TierType.supplier))),
-            ),
+            if (canAddClient)
+              _buildBigButton(
+                context,
+                'Saisie des Règlements Clients',
+                Icons.person_add_alt_1,
+                Colors.blue.shade900,
+                () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ProfessionalPaymentScreen(type: TierType.client))),
+              ),
+            if (canAddClient && canAddSupplier) const SizedBox(height: 20),
+            if (canAddSupplier)
+              _buildBigButton(
+                context,
+                'Saisie des Règlements Fournisseurs',
+                Icons.business_center,
+                Colors.teal.shade800,
+                () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ProfessionalPaymentScreen(type: TierType.supplier))),
+              ),
+            if (!canAddClient && !canAddSupplier)
+              const Center(child: Padding(
+                padding: EdgeInsets.all(40.0),
+                child: Text('Vous n\'avez pas la permission de saisir des règlements. Contactez l\'administrateur.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+              )),
           ],
         ),
       ),
