@@ -51,6 +51,14 @@ class AppUser {
   final bool canViewDeliveries;
   final bool canManagePayroll;
   final bool canImportExport;
+  final bool canManageWarehouses;
+  final bool canManageTasks;
+  final bool canViewStockMovements;
+  final bool canSuperviseTasks;
+
+  // Traçabilité en temps réel
+  final String? lastAction;
+  final DateTime? lastSeen;
 
   AppUser({
     required this.uid,
@@ -93,6 +101,12 @@ class AppUser {
     this.canViewDeliveries = false,
     this.canManagePayroll = false,
     this.canImportExport = false,
+    this.canManageWarehouses = false,
+    this.canManageTasks = false,
+    this.canViewStockMovements = false,
+    this.canSuperviseTasks = false,
+    this.lastAction,
+    this.lastSeen,
   });
 
   Map<String, dynamic> toMap() {
@@ -137,6 +151,12 @@ class AppUser {
       'canViewDeliveries': canViewDeliveries,
       'canManagePayroll': canManagePayroll,
       'canImportExport': canImportExport,
+      'canManageWarehouses': canManageWarehouses,
+      'canManageTasks': canManageTasks,
+      'canViewStockMovements': canViewStockMovements,
+      'canSuperviseTasks': canSuperviseTasks,
+      'lastAction': lastAction,
+      'lastSeen': lastSeen?.toIso8601String(),
     };
   }
 
@@ -185,6 +205,12 @@ class AppUser {
       canViewDeliveries: map['canViewDeliveries'] ?? false,
       canManagePayroll: map['canManagePayroll'] ?? false,
       canImportExport: map['canImportExport'] ?? false,
+      canManageWarehouses: map['canManageWarehouses'] ?? false,
+      canManageTasks: map['canManageTasks'] ?? false,
+      canViewStockMovements: map['canViewStockMovements'] ?? false,
+      canSuperviseTasks: map['canSuperviseTasks'] ?? false,
+      lastAction: map['lastAction'],
+      lastSeen: map['lastSeen'] != null ? DateTime.tryParse(map['lastSeen']) : null,
     );
   }
 }

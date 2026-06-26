@@ -20,14 +20,19 @@ class _StockTransferScreenState extends State<StockTransferScreen> with SingleTi
   late TabController _tabController;
   Warehouse? _fromWarehouse;
   Warehouse? _toWarehouse;
-  Product? _selectedProduct;
+
+  final List<StockTransferItem> _items = [];
   final _qtyController = TextEditingController();
+  Product? _selectedProduct;
+
   final _refController = TextEditingController(text: 'MT${DateFormat('ddMMyyHHmm').format(DateTime.now())}');
   bool _isProcessing = false;
 
   // Filtres pour l'historique
   String _historySearch = "";
   DateTime? _historyDate;
+
+  final NumberFormat _currencyFormat = NumberFormat('#,###', 'fr_FR');
 
   @override
   void initState() {
@@ -38,7 +43,48 @@ class _StockTransferScreenState extends State<StockTransferScreen> with SingleTi
   @override
   void dispose() {
     _tabController.dispose();
+    _qtyController.dispose();
+    _refController.dispose();
     super.dispose();
+  }
+
+  void _addItem() async {
+    if (_fromWarehouse == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Veuillez d\'abord sélectionner le dépôt source.')));
+      return;
+    }
+    if (_selectedProduct == null || _qtyController.text.isEmpty) return;
+
+    int qty = int.tryParse(_qtyController.text) ?? 0;
+    if (qty <= 0) return;
+
+    // Vérification du stock réel dans le dépôt source
+    final service = Provider.of<FirestoreService>(context, listen: false);
+    int available = await service.getWarehouseStock(_selectedProduct!.id, _fromWarehouse!.id);
+
+    if (available < qty) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text("Stock Insuffisant", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+            content: Text("Le dépôt '${_fromWarehouse!.name}' ne contient que $available unité(s) de '${_selectedProduct!.name}'.\n\nVous ne pouvez pas transférer $qty."),
+            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("COMPRIS"))],
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _items.add(StockTransferItem(
+        productId: _selectedProduct!.id,
+        productName: _selectedProduct!.name,
+        quantity: qty,
+      ));
+      _selectedProduct = null;
+      _qtyController.clear();
+    });
   }
 
   @override
@@ -48,7 +94,7 @@ class _StockTransferScreenState extends State<StockTransferScreen> with SingleTi
     return Scaffold(
       appBar: AppBar(
         title: const Text('Transferts de Stock', style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: const Color(0xFF1A237E), // Bleu KO SOLAR plus vif
+        backgroundColor: const Color(0xFF1A237E),
         foregroundColor: Colors.white,
         actions: [
           if (_tabController.index == 1) ...[
@@ -71,12 +117,12 @@ class _StockTransferScreenState extends State<StockTransferScreen> with SingleTi
         ],
         bottom: TabBar(
           controller: _tabController,
-          onTap: (index) => setState(() {}), // Pour rafraîchir les actions de l'appbar
+          onTap: (index) => setState(() {}),
           tabs: const [
             Tab(icon: Icon(Icons.add_circle_outline, color: Colors.white), text: 'NOUVEAU TRANSFERT'),
             Tab(icon: Icon(Icons.history, color: Colors.white), text: 'HISTORIQUE DES DOCUMENTS'),
           ],
-          indicatorColor: Colors.yellow, // Indicateur jaune pour bien voir l'onglet actif
+          indicatorColor: Colors.yellow,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
@@ -93,13 +139,11 @@ class _StockTransferScreenState extends State<StockTransferScreen> with SingleTi
   }
 
   Widget _buildForm(FirestoreService service) {
-    final user = Provider.of<AppUser?>(context);
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // En-tête (Similaire à l'image)
           Card(
             elevation: 2,
             child: Padding(
@@ -164,42 +208,85 @@ class _StockTransferScreenState extends State<StockTransferScreen> with SingleTi
           ),
 
           const SizedBox(height: 30),
-          const Text('SÉLECTION DE L\'ARTICLE', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+          const Text('AJOUTER DES ARTICLES', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
           const SizedBox(height: 10),
 
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.inventory_2, color: Colors.orange),
-              title: Text(_selectedProduct?.name ?? 'Cliquer pour choisir un article...'),
-              subtitle: _selectedProduct != null ? Text('Quantité totale disponible : ${_selectedProduct!.totalQuantity}') : null,
-              trailing: const Icon(Icons.search),
-              onTap: () async {
-                final p = await Navigator.push<Product>(context, MaterialPageRoute(builder: (context) => const StockScreen(isSelectionMode: true)));
-                if (p != null) setState(() => _selectedProduct = p);
-              },
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(10)),
+            child: Column(
+              children: [
+                ListTile(
+                  tileColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  leading: const Icon(Icons.inventory_2, color: Colors.orange),
+                  title: Text(_selectedProduct?.name ?? 'Choisir un article...'),
+                  subtitle: _selectedProduct != null ? Text('Disponible : ${_selectedProduct!.totalQuantity}') : null,
+                  trailing: const Icon(Icons.search),
+                  onTap: () async {
+                    final p = await Navigator.push<Product>(context, MaterialPageRoute(builder: (context) => const StockScreen(isSelectionMode: true)));
+                    if (p != null) setState(() => _selectedProduct = p);
+                  },
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        controller: _qtyController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'Quantité', border: OutlineInputBorder(), filled: true, fillColor: Colors.white),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _addItem,
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade900, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 15)),
+                        child: const Icon(Icons.add),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
 
-          if (_selectedProduct != null) ...[
-            const SizedBox(height: 20),
-            TextField(
-              controller: _qtyController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Quantité à transférer', border: OutlineInputBorder(), prefixIcon: Icon(Icons.add_shopping_cart)),
+          const SizedBox(height: 20),
+          const Text('LISTE DES ARTICLES À TRANSFÉRER', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+          const Divider(),
+
+          if (_items.isEmpty)
+            const Center(child: Padding(padding: EdgeInsets.all(20), child: Text('Aucun article ajouté', style: TextStyle(fontStyle: FontStyle.italic))))
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _items.length,
+              itemBuilder: (context, index) {
+                final item = _items[index];
+                return Card(
+                  child: ListTile(
+                    title: Text(item.productName.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text('Quantité : ${item.quantity}'),
+                    trailing: IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => setState(() => _items.removeAt(index))),
+                  ),
+                );
+              },
             ),
-          ],
 
           const SizedBox(height: 40),
           SizedBox(
             width: double.infinity,
             height: 55,
             child: ElevatedButton.icon(
-              onPressed: (_fromWarehouse == null || _toWarehouse == null || _selectedProduct == null || _qtyController.text.isEmpty || _isProcessing)
+              onPressed: (_fromWarehouse == null || _toWarehouse == null || _items.isEmpty || _isProcessing)
                 ? null
                 : _performTransfer,
               icon: const Icon(Icons.swap_horiz),
-              label: const Text('VALIDER LE TRANSFERT ET ÉMETTRE BORDEREAU', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade900, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+              label: const Text('VALIDER LE TRANSFERT DE MASSE', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             ),
           ),
         ],
@@ -208,6 +295,9 @@ class _StockTransferScreenState extends State<StockTransferScreen> with SingleTi
   }
 
   Widget _buildHistory(FirestoreService service) {
+    final currentUser = Provider.of<AppUser?>(context);
+    final isAdmin = currentUser?.role == UserRole.admin || currentUser?.role == UserRole.manager;
+
     return Column(
       children: [
         Padding(
@@ -215,7 +305,7 @@ class _StockTransferScreenState extends State<StockTransferScreen> with SingleTi
           child: TextField(
             onChanged: (val) => setState(() => _historySearch = val.toLowerCase()),
             decoration: InputDecoration(
-              hintText: 'Rechercher un produit ou un dépôt...',
+              hintText: 'Rechercher par dépôt ou référence...',
               prefixIcon: const Icon(Icons.search),
               filled: true,
               fillColor: Colors.grey.shade100,
@@ -230,16 +320,14 @@ class _StockTransferScreenState extends State<StockTransferScreen> with SingleTi
               if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
               var transfers = snapshot.data!;
 
-              // Filtrage par recherche
               if (_historySearch.isNotEmpty) {
                 transfers = transfers.where((t) =>
-                  t.productName.toLowerCase().contains(_historySearch) ||
+                  t.reference.toLowerCase().contains(_historySearch) ||
                   t.fromWarehouseName.toLowerCase().contains(_historySearch) ||
                   t.toWarehouseName.toLowerCase().contains(_historySearch)
                 ).toList();
               }
 
-              // Filtrage par date
               if (_historyDate != null) {
                 transfers = transfers.where((t) =>
                   t.date.year == _historyDate!.year &&
@@ -248,7 +336,7 @@ class _StockTransferScreenState extends State<StockTransferScreen> with SingleTi
                 ).toList();
               }
 
-              if (transfers.isEmpty) return const Center(child: Text('Aucun historique trouvé pour ces critères.'));
+              if (transfers.isEmpty) return const Center(child: Text('Aucun transfert trouvé.'));
 
               return ListView.builder(
                 padding: const EdgeInsets.all(16),
@@ -257,28 +345,47 @@ class _StockTransferScreenState extends State<StockTransferScreen> with SingleTi
                   final t = transfers[index];
                   return Card(
                     margin: const EdgeInsets.only(bottom: 12),
-                    child: ListTile(
+                    child: ExpansionTile(
                       leading: const CircleAvatar(backgroundColor: Colors.blueGrey, child: Icon(Icons.swap_horiz, color: Colors.white)),
-                      title: Text('${t.productName.toUpperCase()} - Qté : ${t.quantity}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      title: Text('Réf: ${t.reference}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text('De : ${t.fromWarehouseName} ➔ Vers : ${t.toWarehouseName}'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('De : ${t.fromWarehouseName} ➔ Vers : ${t.toWarehouseName}'),
-                          Row(
-                            children: [
-                              Text(DateFormat('dd/MM/yyyy HH:mm').format(t.date), style: const TextStyle(fontSize: 11)),
-                              if (t.createdBy.isNotEmpty) ...[
-                                const SizedBox(width: 10),
-                                Text('Fait par: ${t.createdBy}', style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.blueGrey)),
-                              ],
-                            ],
+                          IconButton(
+                            icon: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 20),
+                            onPressed: () => PdfService.generateTransferBordereau(t),
                           ),
+                          if (isAdmin)
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                              onPressed: () => _confirmDeleteTransfer(t, service, currentUser?.displayName ?? 'Admin'),
+                            ),
                         ],
                       ),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
-                        onPressed: () => PdfService.generateTransferBordereau(t),
-                      ),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Date: ${DateFormat('dd/MM/yyyy HH:mm').format(t.date)}'),
+                              Text('Par: ${t.createdBy}'),
+                              const Divider(),
+                              ...t.items.map((item) => Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(item.productName.toUpperCase(), style: const TextStyle(fontSize: 12)),
+                                    Text('Qté: ${item.quantity}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              )),
+                            ],
+                          ),
+                        )
+                      ],
                     ),
                   );
                 },
@@ -290,18 +397,34 @@ class _StockTransferScreenState extends State<StockTransferScreen> with SingleTi
     );
   }
 
+  void _confirmDeleteTransfer(StockTransfer t, FirestoreService service, String userName) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Annuler le transfert ?", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+        content: Text("Cette action va annuler le transfert '${t.reference}' et remettre les stocks à leur état initial (Soustraction du dépôt destination et ré-ajout au dépôt source).\n\nConfirmer ?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("NON")),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              await service.deleteStockTransfer(t, userName);
+              if (mounted) Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Transfert annulé et stocks restaurés.')));
+            },
+            child: const Text("OUI, ANNULER", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _performTransfer() async {
     final service = Provider.of<FirestoreService>(context, listen: false);
     final user = Provider.of<AppUser?>(context, listen: false);
-    int qty = int.tryParse(_qtyController.text) ?? 0;
 
     if (_fromWarehouse!.id == _toWarehouse!.id) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Le dépôt source et destination doivent être différents.')));
-      return;
-    }
-
-    if (qty <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Veuillez saisir une quantité valide.')));
       return;
     }
 
@@ -310,25 +433,30 @@ class _StockTransferScreenState extends State<StockTransferScreen> with SingleTi
     try {
       final transfer = StockTransfer(
         id: '',
+        reference: _refController.text,
         date: DateTime.now(),
-        productId: _selectedProduct!.id,
-        productName: _selectedProduct!.name,
         fromWarehouseId: _fromWarehouse!.id,
         fromWarehouseName: _fromWarehouse!.name,
         toWarehouseId: _toWarehouse!.id,
         toWarehouseName: _toWarehouse!.name,
-        quantity: qty,
+        items: List.from(_items),
         createdBy: user?.displayName ?? 'Inconnu',
       );
 
       await service.addStockTransfer(transfer);
 
-      // Émettre le bordereau PDF automatiquement
+      // Émettre le bordereau PDF
       await PdfService.generateTransferBordereau(transfer);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Transfert réussi et Bordereau généré !'), backgroundColor: Colors.green));
-        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Transfert de masse réussi !'), backgroundColor: Colors.green));
+        setState(() {
+          _items.clear();
+          _fromWarehouse = null;
+          _toWarehouse = null;
+          _refController.text = 'MT${DateFormat('ddMMyyHHmm').format(DateTime.now())}';
+        });
+        _tabController.animateTo(1); // Aller à l'historique
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red));

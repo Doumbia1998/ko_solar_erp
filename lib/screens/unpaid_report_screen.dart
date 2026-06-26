@@ -66,7 +66,7 @@ class _UnpaidReportScreenState extends State<UnpaidReportScreen> {
           type: _reportType,
           start: _startDate,
           end: _endDate,
-          unpaidDetails: details,
+          unpaidDetails: finalDetails, // Utiliser la liste filtrée
         );
       }
     } catch (e) {

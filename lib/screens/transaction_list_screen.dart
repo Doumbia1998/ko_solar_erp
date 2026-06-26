@@ -380,8 +380,8 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
         if (!isQuote && t.type != TransactionType.saleReturn && t.type != TransactionType.purchaseReturn)
           IconButton(
             icon: const Icon(Icons.assignment_return, color: Colors.orange, size: 20),
-            tooltip: 'Transformer en Retour',
-            onPressed: () => _confirmTransformationToReturn(context, firestoreService, t),
+            tooltip: 'Effectuer un Retour',
+            onPressed: () => _showPartialReturnDialog(context, firestoreService, t),
           ),
         if (!isQuote)
           IconButton(
@@ -400,47 +400,113 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     );
   }
 
-  void _confirmTransformationToReturn(BuildContext context, FirestoreService service, AppTransaction tx) {
+  void _showPartialReturnDialog(BuildContext context, FirestoreService service, AppTransaction tx) {
+    // Créer une copie des articles pour gérer les quantités à retourner
+    final Map<String, int> returnQuantities = {};
+    for (var item in tx.items) {
+      returnQuantities[item.productId] = 0;
+    }
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Transformer en Retour ?'),
-        content: Text('Voulez-vous transformer la facture ${tx.invoiceNumber} en Facture de Retour ?\n\nCela remettra les marchandises en stock et créditera le compte du client.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('ANNULER')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () async {
-              Navigator.pop(context);
-              final auth = Provider.of<AuthService>(context, listen: false);
-              final user = await auth.getAppUser((await auth.user.first)!.uid);
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: Text('Retour sur Facture ${tx.invoiceNumber}'),
+            content: SizedBox(
+              width: 500,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Saisissez les quantités à retourner pour chaque article :', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 10),
+                  ...tx.items.map((item) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Expanded(flex: 2, child: Text(item.productName.toUpperCase(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                          Text('(${item.quantity} vendus)', style: const TextStyle(fontSize: 10, color: Colors.blueGrey)),
+                          const SizedBox(width: 10),
+                          SizedBox(
+                            width: 80,
+                            child: TextFormField(
+                              initialValue: '0',
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+                              onChanged: (val) {
+                                int q = int.tryParse(val) ?? 0;
+                                if (q > item.quantity) q = item.quantity;
+                                returnQuantities[item.productId] = q;
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('ANNULER')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () async {
+                  // Vérifier si au moins un article est retourné
+                  if (returnQuantities.values.every((q) => q == 0)) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Veuillez saisir au moins une quantité à retourner.')));
+                    return;
+                  }
 
-              // On crée une nouvelle transaction de type retour basée sur l'existante
-              final returnTx = AppTransaction(
-                id: '', // Nouvel ID
-                invoiceNumber: 'RET-${tx.invoiceNumber}',
-                date: DateTime.now(),
-                tierId: tx.tierId,
-                tierName: tx.tierName,
-                type: tx.type == TransactionType.sale ? TransactionType.saleReturn : TransactionType.purchaseReturn,
-                items: tx.items,
-                totalHT: tx.totalHT,
-                amountPaid: 0,
-                paymentMethod: tx.paymentMethod,
-                warehouseId: tx.warehouseId,
-                destination: tx.destination,
-                transportFees: tx.transportFees,
-                addTransport: tx.addTransport,
-              );
+                  Navigator.pop(context);
 
-              await service.addTransaction(returnTx, user?.displayName ?? 'Admin');
+                  final List<TransactionItem> returnItems = [];
+                  double returnHT = 0;
 
-              // On marque l'originale comme ayant un retour si nécessaire (ou on la laisse telle quelle)
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Facture de retour générée avec succès !'), backgroundColor: Colors.green));
-            },
-            child: const Text('CONFIRMER LE RETOUR', style: TextStyle(color: Colors.white)),
-          ),
-        ],
+                  for (var item in tx.items) {
+                    int q = returnQuantities[item.productId] ?? 0;
+                    if (q > 0) {
+                      double unitTotal = (q * item.unitPrice);
+                      // On proratise la remise
+                      double proratedDiscount = (item.discount / item.quantity) * q;
+                      returnItems.add(TransactionItem(
+                        productId: item.productId,
+                        productName: item.productName,
+                        quantity: q,
+                        unitPrice: item.unitPrice,
+                        discount: proratedDiscount,
+                      ));
+                      returnHT += (unitTotal - proratedDiscount);
+                    }
+                  }
+
+                  final returnTx = AppTransaction(
+                    id: '',
+                    invoiceNumber: 'RET-${tx.invoiceNumber}-${DateFormat('HHmm').format(DateTime.now())}',
+                    date: DateTime.now(),
+                    tierId: tx.tierId,
+                    tierName: tx.tierName,
+                    type: tx.type == TransactionType.sale ? TransactionType.saleReturn : TransactionType.purchaseReturn,
+                    items: returnItems,
+                    totalHT: returnHT,
+                    amountPaid: 0,
+                    paymentMethod: tx.paymentMethod,
+                    warehouseId: tx.warehouseId,
+                    destination: tx.destination,
+                    transportFees: 0, // Pas de transport sur un retour
+                    addTransport: false,
+                    createdBy: _currentUser?.displayName ?? 'Admin',
+                  );
+
+                  await service.addTransaction(returnTx, _currentUser?.displayName ?? 'Admin');
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Facture de retour générée !'), backgroundColor: Colors.green));
+                },
+                child: const Text('VALIDER LE RETOUR', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        }
       ),
     );
   }

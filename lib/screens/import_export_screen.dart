@@ -7,6 +7,8 @@ import '../services/firestore_service.dart';
 import '../models/product.dart';
 import '../models/tier.dart';
 
+import '../models/app_user.dart';
+
 class ImportExportScreen extends StatefulWidget {
   const ImportExportScreen({super.key});
 
@@ -119,6 +121,9 @@ class _ImportExportScreenState extends State<ImportExportScreen> {
     if (type == 'balances') {
       count = await service.importSageBalances(content, 'Import Sage');
     } else {
+      final currentUser = Provider.of<AppUser?>(context, listen: false);
+      final userName = currentUser?.displayName ?? 'Import Sage';
+
       final lines = content.split('\n');
       for (var line in lines) {
         if (line.trim().isEmpty) continue;
@@ -145,7 +150,7 @@ class _ImportExportScreenState extends State<ImportExportScreen> {
             compteVente: parts.length >= 3 ? parts[2].trim() : '70110000',
             compteAchat: parts.length >= 4 ? parts[3].trim() : '60110000',
           );
-          await service.addProduct(product);
+          await service.addProduct(product, userName);
           count++;
         } else if (type == 'tiers' && parts.length >= 2) {
           final codeTiers = parts[0].trim().toUpperCase();
@@ -166,7 +171,7 @@ class _ImportExportScreenState extends State<ImportExportScreen> {
             address: parts.length >= 5 ? parts[4].trim() : '',
             compteTiers: parts[0].trim().toUpperCase(), // Code Sage (ex: 411AZIZ)
           );
-          await service.addTier(tier);
+          await service.addTier(tier, userName);
           count++;
         }
       }

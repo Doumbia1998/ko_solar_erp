@@ -52,7 +52,7 @@ class WarehouseListScreen extends StatelessWidget {
                           children: transfers.map((t) => ListTile(
                             dense: true,
                             leading: Icon(t.toWarehouseId == w.id ? Icons.download : Icons.upload, color: t.toWarehouseId == w.id ? Colors.green : Colors.orange),
-                            title: Text("${t.productName} (${t.quantity})"),
+                            title: Text("${t.items.length} article(s) - Réf: ${t.reference}"),
                             subtitle: Text(DateFormat('dd/MM/yyyy').format(t.date)),
                             trailing: Text(t.toWarehouseId == w.id ? "ENTRÉE" : "SORTIE", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                           )).toList(),

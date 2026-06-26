@@ -11,6 +11,8 @@ import 'screens/dashboard_screen.dart';
 import 'models/app_user.dart';
 import 'firebase_options.dart'; 
 
+import 'dart:async';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
@@ -64,8 +66,29 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class AuthWrapper extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  Timer? _inactivityTimer;
+
+  void _resetTimer(AuthService authService) {
+    _inactivityTimer?.cancel();
+    _inactivityTimer = Timer(const Duration(minutes: 10), () {
+      debugPrint('Déconnexion automatique pour inactivité (10 min)');
+      authService.signOut();
+    });
+  }
+
+  @override
+  void dispose() {
+    _inactivityTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -87,8 +110,14 @@ class AuthWrapper extends StatelessWidget {
         
         final appUser = snapshot.data;
         if (appUser != null) {
-          return const DashboardScreen();
+          // On enveloppe le Dashboard dans un Listener pour détecter l'activité
+          return Listener(
+            onPointerDown: (_) => _resetTimer(authService),
+            onPointerMove: (_) => _resetTimer(authService),
+            child: const DashboardScreen(),
+          );
         } else {
+          _inactivityTimer?.cancel();
           return const LoginScreen();
         }
       },

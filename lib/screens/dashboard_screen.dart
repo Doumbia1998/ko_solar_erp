@@ -56,8 +56,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _currentIndex = 0;
 
   @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final currentUser = Provider.of<AppUser?>(context);
+    final firestoreService = Provider.of<FirestoreService>(context);
+
     if (currentUser == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
     final isAdmin = currentUser.role == UserRole.admin;
@@ -81,8 +88,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final canViewReminders = isAdmin || currentUser.canViewReminders;
     final canViewWeather = isAdmin || currentUser.canViewWeather;
     final canViewDeliveries = isAdmin || currentUser.canViewDeliveries;
+    final canViewStockMovements = isAdmin || currentUser.canViewStockMovements;
     final canManagePayroll = isAdmin || currentUser.canManagePayroll;
     final canImportExport = isAdmin || currentUser.canImportExport;
+
+    // Comptabilité Détaillée
+    final canViewUnpaidReport = isAdmin || currentUser.canViewUnpaidReport;
+    final canViewPlanComptable = isAdmin || currentUser.canViewPlanComptable;
+    final canViewJournalComptable = isAdmin || currentUser.canViewJournalComptable;
+    final canViewTrialBalance = isAdmin || currentUser.canViewTrialBalance;
+    final canViewAgedBalance = isAdmin || currentUser.canViewAgedBalance;
+    final canViewCashControl = isAdmin || currentUser.canViewCashControl;
+    final canManageFiscalYears = isAdmin || currentUser.canManageFiscalYears;
+    final canManageReconciliation = isAdmin || currentUser.canManageReconciliation;
 
     // Règlements
     final canViewPayments = isAdmin || currentUser.canViewPayments;
@@ -111,10 +129,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } else {
       pages = [
         const DashboardContent(),
-        if (canViewPurchases) TransactionListScreen(type: TransactionType.purchase),
-        if (canViewSales) TransactionListScreen(type: TransactionType.sale),
-        if (canViewTransfers) StockTransferScreen(),
-        const TransportScreen(),
+        if (canViewPurchases) const TransactionListScreen(type: TransactionType.purchase),
+        if (canViewSales) const TransactionListScreen(type: TransactionType.sale),
+        if (canViewTransfers) const StockTransferScreen(),
+        if (canViewTransport) const TransportScreen(),
       ];
       navItems = [
         const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Accueil'),
@@ -125,106 +143,179 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ];
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(currentUser.displayName.toUpperCase(), style: const TextStyle(fontSize: 10, color: Colors.grey)),
-            Text(isAdmin ? 'ADMINISTRATION' : (isTechManager ? 'RESPONSABLE TECHNIQUE' : (isStorekeeper ? 'ESPACE MAGASINIER' : 'K-O SOLAR')),
-              style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E), fontSize: 17)),
-          ],
-        ),
-        actions: [
-          IconButton(icon: const Icon(Icons.logout), onPressed: () => context.read<AuthService>().signOut()),
-        ],
-      ),
-      drawer: (isStorekeeper || isTechnician || (isTechManager && !isAdmin)) ? null : Drawer(
-        child: ListView(
-          children: [
-            DrawerHeader(
-              decoration: const BoxDecoration(color: Color(0xFF1A237E)),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('KO SOLAR GESTION', style: TextStyle(color: Colors.white, fontSize: 24)),
-                  Text(currentUser.role.toString().split('.').last.toUpperCase(), style: const TextStyle(color: Colors.white70, fontSize: 12)),
+    return StreamBuilder<List<AppTransaction>>(
+      stream: firestoreService.getTransactions(type: TransactionType.sale),
+      builder: (context, snapshotTx) {
+        return StreamBuilder<List<Payment>>(
+          stream: firestoreService.getPayments(),
+          builder: (context, snapshotPay) {
+            int overdueCount = 0;
+            if (snapshotTx.hasData && snapshotPay.hasData) {
+              final allTxs = snapshotTx.data!;
+              final allPays = snapshotPay.data!;
+              final now = DateTime.now();
+              final today = DateTime(now.year, now.month, now.day);
+
+              for (var t in allTxs) {
+                if (t.dueDate == null) continue;
+                if (today.difference(t.dueDate!).inDays >= 1) {
+                   double paid = allPays
+                      .where((p) => p.invoiceNumber == t.invoiceNumber || (p.reference.toUpperCase().contains(t.invoiceNumber.toUpperCase())))
+                      .fold(0.0, (sum, p) => sum + p.amount);
+                  bool acompteInPay = allPays.any((p) => p.invoiceNumber == t.invoiceNumber && p.reference.contains('Acompte'));
+                  if (!acompteInPay) paid += t.amountPaid;
+
+                  if (t.netToPay - paid > 50) overdueCount++;
+                }
+              }
+            }
+
+            return Scaffold(
+              appBar: AppBar(
+                title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(currentUser.displayName.toUpperCase(), style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                    Text(isAdmin ? 'ADMINISTRATION' : (isTechManager ? 'RESPONSABLE TECHNIQUE' : (isStorekeeper ? 'ESPACE MAGASINIER' : 'K-O SOLAR')),
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E), fontSize: 17)),
+                  ],
+                ),
+                actions: [
+                  if (canViewReminders && overdueCount > 0)
+                    Stack(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.notifications_active, color: Colors.red),
+                          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const UnpaidReminderScreen())),
+                        ),
+                        Positioned(
+                          right: 8,
+                          top: 8,
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(10)),
+                            constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                            child: Text('$overdueCount', style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+                          ),
+                        )
+                      ],
+                    ),
+                  IconButton(icon: const Icon(Icons.logout), onPressed: () => context.read<AuthService>().signOut()),
                 ],
               ),
-            ),
-            _buildDrawerTile(context, Icons.inventory, 'Stocks', Colors.blueGrey, const StockScreen()),
-            if (canViewSales)
-              _buildDrawerTile(context, Icons.request_quote, 'Devis', Colors.purple, const TransactionListScreen(type: TransactionType.quote)),
-            if (canViewExpenses)
-              _buildDrawerTile(context, Icons.money_off, 'Gestion des Dépenses', Colors.redAccent, const ExpenseScreen()),
-            if (canViewAdvances)
-              _buildDrawerTile(context, Icons.savings, 'Gestion des Avances', Colors.teal, const AdvanceManagementScreen()),
-            if (canViewDeliveries)
-              _buildDrawerTile(context, Icons.local_shipping, 'Livraisons (BL)', Colors.orange, const DeliveryListScreen()),
-            if (canManagePayroll)
-              _buildDrawerTile(context, Icons.badge, 'Gestion de la Paie', Colors.blue, const PayrollScreen()),
-            if (canImportExport)
-              _buildDrawerTile(context, Icons.import_export, 'Import / Export Sage', Colors.grey, const ImportExportScreen()),
+              drawer: (isStorekeeper || isTechnician || (isTechManager && !isAdmin)) ? null : Drawer(
+                child: ListView(
+                  children: [
+                    DrawerHeader(
+                      decoration: const BoxDecoration(color: Color(0xFF1A237E)),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('KO SOLAR GESTION', style: TextStyle(color: Colors.white, fontSize: 24)),
+                          Text(currentUser.role.toString().split('.').last.toUpperCase(), style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    _buildDrawerTile(context, Icons.inventory, 'Stocks', Colors.blueGrey, const StockScreen()),
+                    if (canViewStockMovements)
+                      _buildDrawerTile(context, Icons.swap_vert, 'Mouvements de Stock', Colors.orange, const StockMovementScreen()),
+                    if (canViewSales)
+                      _buildDrawerTile(context, Icons.request_quote, 'Devis', Colors.purple, const TransactionListScreen(type: TransactionType.quote)),
+                    if (canViewExpenses)
+                      _buildDrawerTile(context, Icons.money_off, 'Gestion des Dépenses', Colors.redAccent, const ExpenseScreen()),
+                    if (canViewAdvances)
+                      _buildDrawerTile(context, Icons.savings, 'Gestion des Avances', Colors.teal, const AdvanceManagementScreen()),
+                    if (canViewDeliveries)
+                      _buildDrawerTile(context, Icons.local_shipping, 'Livraisons (BL)', Colors.orange, const DeliveryListScreen()),
+                    if (canManagePayroll)
+                      _buildDrawerTile(context, Icons.badge, 'Gestion de la Paie', Colors.blue, const PayrollScreen()),
+                    if (canImportExport)
+                      _buildDrawerTile(context, Icons.import_export, 'Import / Export Sage', Colors.grey, const ImportExportScreen()),
 
-            if (isAdmin || isTechManager || isTechnician)
-              _buildDrawerTile(context, Icons.assignment, 'Gestion des Chantiers', Colors.deepOrange, const TaskAssignmentScreen()),
+                    if (isAdmin || isTechManager || isTechnician)
+                      _buildDrawerTile(context, Icons.assignment, 'Gestion des Chantiers', Colors.deepOrange, const TaskAssignmentScreen()),
 
-            if (canViewReminders)
-              _buildDrawerTile(context, Icons.warning_amber, 'Relance des Impayés', Colors.red, const UnpaidReminderScreen()),
-            if (canViewWeather)
-              _buildDrawerTile(context, Icons.cloud, 'Avertissement Météo', Colors.orange, const WeatherAlertScreen()),
+                    if (canViewReminders)
+                      _buildDrawerTile(
+                        context,
+                        Icons.warning_amber,
+                        'Relance des Impayés',
+                        Colors.red,
+                        const UnpaidReminderScreen(),
+                        badgeCount: overdueCount
+                      ),
+                    if (canViewWeather)
+                      _buildDrawerTile(context, Icons.cloud, 'Avertissement Météo', Colors.orange, const WeatherAlertScreen()),
 
-            if (isAdmin || isStorekeeper)
-              _buildDrawerTile(context, Icons.warehouse, 'Gestion des Dépôts', Colors.brown, const WarehouseListScreen()),
-            const Divider(),
-            if (canViewPayments) ...[
-              _buildDrawerTile(context, Icons.payments, 'Règlements', Colors.green, const PaymentScreen()),
-            ],
-            if (canViewAccounting) ...[
-               _buildDrawerTile(context, Icons.money_off, 'État des Impayés', Colors.red, const UnpaidReportScreen()),
-               if (isAdmin) _buildDrawerTile(context, Icons.lock_clock, 'Clôture de Journée', Colors.red, const DailyClosingScreen()),
-            ],
-            if (canViewClients || canViewSuppliers) ...[
-              const Divider(),
-              if (canViewClients) _buildDrawerTile(context, Icons.people, 'Clients', Colors.indigo, const TierListScreen(type: TierType.client)),
-              if (canViewSuppliers) _buildDrawerTile(context, Icons.business_center, 'Fournisseurs', Colors.teal, const TierListScreen(type: TierType.supplier)),
-            ],
-            if (canViewAccounting) ...[
-              const Divider(),
-              _buildDrawerTile(context, Icons.account_balance, 'Plan Comptable', Colors.indigo, const AccountListScreen()),
-              _buildDrawerTile(context, Icons.menu_book, 'Journal Comptable', Colors.brown, const JournalScreen()),
-              _buildDrawerTile(context, Icons.receipt_long, 'Balance des Comptes', Colors.teal, const TrialBalanceScreen()),
-              _buildDrawerTile(context, Icons.history, 'Balance Agée Clients', Colors.orange, const AgedBalanceScreen()),
-              _buildDrawerTile(context, Icons.account_balance_wallet, 'Contrôle de Caisse', Colors.green, const CashControlScreen()),
-              _buildDrawerTile(context, Icons.date_range, 'Exercices Comptables', Colors.blueAccent, const FiscalYearScreen()),
-              _buildDrawerTile(context, Icons.account_balance_wallet, 'Rapprochement Bancaire', Colors.green, const ReconciliationScreen()),
-            ],
-            if (canManageUsers) ...[
-              const Divider(),
-              _buildDrawerTile(context, Icons.analytics, 'Statistiques & Marges', Colors.orange, const StatisticsScreen()),
-              if (canViewAudit)
-                _buildDrawerTile(context, Icons.security, 'Audit & Traçabilité', Colors.blueGrey, const AuditLogsScreen()),
-              _buildDrawerTile(context, Icons.admin_panel_settings, 'Gestion Utilisateurs', Colors.red, const UserManagementScreen()),
-            ],
-          ],
-        ),
-      ),
-      body: pages[_currentIndex >= pages.length ? 0 : _currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex >= pages.length ? 0 : _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFF1A237E),
-        unselectedItemColor: Colors.grey,
-        items: navItems,
-      ),
+                    if (isAdmin || isStorekeeper)
+                      _buildDrawerTile(context, Icons.warehouse, 'Gestion des Dépôts', Colors.brown, const WarehouseListScreen()),
+                    const Divider(),
+                    if (canViewPayments) ...[
+                      _buildDrawerTile(context, Icons.payments, 'Règlements', Colors.green, const PaymentScreen()),
+                    ],
+                    if (canViewAccounting) ...[
+                       if (canViewUnpaidReport) _buildDrawerTile(context, Icons.money_off, 'État des Impayés', Colors.red, const UnpaidReportScreen()),
+                       if (isAdmin) _buildDrawerTile(context, Icons.lock_clock, 'Clôture de Journée', Colors.red, const DailyClosingScreen()),
+                    ],
+                    if (canViewClients || canViewSuppliers) ...[
+                      const Divider(),
+                      if (canViewClients) _buildDrawerTile(context, Icons.people, 'Clients', Colors.indigo, const TierListScreen(type: TierType.client)),
+                      if (canViewSuppliers) _buildDrawerTile(context, Icons.business_center, 'Fournisseurs', Colors.teal, const TierListScreen(type: TierType.supplier)),
+                    ],
+                    if (canViewAccounting) ...[
+                      const Divider(),
+                      if (canViewPlanComptable) _buildDrawerTile(context, Icons.account_balance, 'Plan Comptable', Colors.indigo, const AccountListScreen()),
+                      if (canViewJournalComptable) _buildDrawerTile(context, Icons.menu_book, 'Journal Comptable', Colors.brown, const JournalScreen()),
+                      if (canViewTrialBalance) _buildDrawerTile(context, Icons.receipt_long, 'Balance des Comptes', Colors.teal, const TrialBalanceScreen()),
+                      if (canViewAgedBalance) _buildDrawerTile(context, Icons.history, 'Balance Agée Clients', Colors.orange, const AgedBalanceScreen()),
+                      if (canViewCashControl) _buildDrawerTile(context, Icons.account_balance_wallet, 'Contrôle de Caisse', Colors.green, const CashControlScreen()),
+                      if (canManageFiscalYears) _buildDrawerTile(context, Icons.date_range, 'Exercices Comptables', Colors.blueAccent, const FiscalYearScreen()),
+                      if (canManageReconciliation) _buildDrawerTile(context, Icons.account_balance_wallet, 'Rapprochement Bancaire', Colors.green, const ReconciliationScreen()),
+                    ],
+                    if (canManageUsers) ...[
+                      const Divider(),
+                      _buildDrawerTile(context, Icons.analytics, 'Statistiques & Marges', Colors.orange, const StatisticsScreen()),
+                      if (canViewAudit)
+                        _buildDrawerTile(context, Icons.security, 'Audit & Traçabilité', Colors.blueGrey, const AuditLogsScreen()),
+                      _buildDrawerTile(context, Icons.admin_panel_settings, 'Gestion Utilisateurs', Colors.red, const UserManagementScreen()),
+                    ],
+                  ],
+                ),
+              ),
+              body: pages[_currentIndex >= pages.length ? 0 : _currentIndex],
+              bottomNavigationBar: BottomNavigationBar(
+                currentIndex: _currentIndex >= pages.length ? 0 : _currentIndex,
+                onTap: (index) {
+                  setState(() => _currentIndex = index);
+                },
+                type: BottomNavigationBarType.fixed,
+                selectedItemColor: const Color(0xFF1A237E),
+                unselectedItemColor: Colors.grey,
+                items: navItems,
+              ),
+            );
+          }
+        );
+      }
     );
   }
 
-  Widget _buildDrawerTile(BuildContext context, IconData icon, String title, Color color, Widget screen) {
+  Widget _buildDrawerTile(BuildContext context, IconData icon, String title, Color color, Widget screen, {int badgeCount = 0}) {
     return ListTile(
       leading: Icon(icon, color: color),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
+      title: Row(
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
+          if (badgeCount > 0) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(10)),
+              child: Text('$badgeCount', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ],
+      ),
       onTap: () {
         Navigator.pop(context);
         Navigator.push(context, MaterialPageRoute(builder: (context) => screen));
@@ -399,7 +490,7 @@ class DashboardContent extends StatelessWidget {
                     // --- CALCULS AVANCES ---
                     double totalAvancesDispo = advances.where((a) => !a.isUsed).fold(0.0, (sum, a) => sum + a.amount);
 
-                    // --- CALCULS CLIENTS (VENTES & RETOURS) ---
+                    // --- CALCULS CLIENTS (VENTES & RETOURS UNIQUEMENT - ON IGNORE LES DEVIS) ---
                     final salesAndReturns = transactions.where((t) => t.type == TransactionType.sale || t.type == TransactionType.saleReturn).toList();
                     double caSales = salesAndReturns.fold(0.0, (sum, t) => sum + t.netToPay);
                     double totalEncaisseSales = payments.where((p) => p.tierType == TierType.client).fold(0.0, (sum, p) => sum + p.amount);

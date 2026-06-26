@@ -7,9 +7,18 @@ import '../models/app_user.dart';
 import '../models/transaction.dart';
 import '../services/pdf_service.dart';
 
-class TechnicianTaskScreen extends StatelessWidget {
+import 'package:signature/signature.dart';
+import 'package:geolocator/geolocator.dart';
+import 'dart:convert';
+
+class TechnicianTaskScreen extends StatefulWidget {
   const TechnicianTaskScreen({super.key});
 
+  @override
+  State<TechnicianTaskScreen> createState() => _TechnicianTaskScreenState();
+}
+
+class _TechnicianTaskScreenState extends State<TechnicianTaskScreen> {
   @override
   Widget build(BuildContext context) {
     final service = Provider.of<FirestoreService>(context);
@@ -28,6 +37,9 @@ class TechnicianTaskScreen extends StatelessWidget {
         builder: (context, snapshot) {
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
           final tasks = snapshot.data!.toList();
+
+          // Ajout : Si l'utilisateur est Responsable Technique, il voit tout ici aussi ?
+          // Non, l'écran est "Mes Chantiers". S'il veut tout voir il va dans "Suivi" du menu Dashboard.
 
           if (tasks.isEmpty) {
             return Center(
@@ -149,82 +161,116 @@ class TechnicianTaskScreen extends StatelessWidget {
   void _showReportDialog(BuildContext context, FirestoreService service, Task task, String userName) {
     final descriptionController = TextEditingController(text: task.reportDescription);
     final locationController = TextEditingController(text: task.siteLocation);
-    final gpsController = TextEditingController(text: task.gpsLocation);
+
+    final techSignController = SignatureController(penStrokeWidth: 3, penColor: Colors.black);
+    final clientSignController = SignatureController(penStrokeWidth: 3, penColor: Colors.blue);
+
     final bool canEdit = task.status != TaskStatus.approved;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Rapport de Chantier : ${task.invoiceNumber}'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: locationController,
-                enabled: canEdit,
-                decoration: const InputDecoration(labelText: 'Lieu précis de l\'installation', border: OutlineInputBorder()),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Rapport de Chantier : ${task.invoiceNumber}'),
+          content: SizedBox(
+            width: 700,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: locationController,
+                    enabled: canEdit,
+                    decoration: const InputDecoration(labelText: 'Lieu précis de l\'installation', border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: descriptionController,
+                    enabled: canEdit,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: 'Détail des travaux effectués',
+                      hintText: 'Notez ici l\'avancement quotidien du chantier...',
+                      border: OutlineInputBorder()
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  if (canEdit) ...[
+                    const Text('SIGNATURE DU TECHNICIEN (En main)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    const SizedBox(height: 5),
+                    Container(
+                      decoration: BoxDecoration(border: Border.all(color: Colors.grey)),
+                      child: Signature(controller: techSignController, height: 100, backgroundColor: Colors.white),
+                    ),
+                    TextButton(onPressed: () => techSignController.clear(), child: const Text('Effacer Signature')),
+
+                    const SizedBox(height: 20),
+                    const Text('SIGNATURE DU CLIENT (En main)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.blue)),
+                    const SizedBox(height: 5),
+                    Container(
+                      decoration: BoxDecoration(border: Border.all(color: Colors.blue.shade200)),
+                      child: Signature(controller: clientSignController, height: 100, backgroundColor: Colors.white),
+                    ),
+                    TextButton(onPressed: () => clientSignController.clear(), child: const Text('Effacer Signature')),
+                  ],
+
+                  if (task.managerComment != null) ...[
+                    const SizedBox(height: 10),
+                    const Divider(),
+                    Text('Commentaire du Responsable : ${task.managerComment}', style: const TextStyle(color: Colors.red, fontStyle: FontStyle.italic, fontWeight: FontWeight.bold)),
+                  ]
+                ],
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: gpsController,
-                enabled: canEdit,
-                decoration: const InputDecoration(labelText: 'Coordonnées GPS (Lat, Lng)', hintText: 'Ex: 12.63, -8.00', border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: descriptionController,
-                enabled: canEdit,
-                maxLines: 6,
-                decoration: const InputDecoration(
-                  labelText: 'Détail des travaux effectués',
-                  hintText: 'Notez ici l\'avancement quotidien du chantier...',
-                  border: OutlineInputBorder()
-                ),
-              ),
-              if (task.managerComment != null) ...[
-                const SizedBox(height: 10),
-                const Divider(),
-                Text('Commentaire du Responsable : ${task.managerComment}', style: const TextStyle(color: Colors.red, fontStyle: FontStyle.italic, fontWeight: FontWeight.bold)),
-              ]
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('FERMER')),
-          if (canEdit)
-            Row(
-              children: [
-                ElevatedButton(
-                  onPressed: () async {
-                    await service.updateTaskStatus(task.id, TaskStatus.in_progress, userName, reportData: {
-                      'reportDescription': descriptionController.text,
-                      'siteLocation': locationController.text,
-                      'gpsLocation': gpsController.text,
-                    });
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rapport sauvegardé !')));
-                  },
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-                  child: const Text('SAUVEGARDER'),
-                ),
-                const SizedBox(width: 10),
-                ElevatedButton(
-                  onPressed: () async {
-                    await service.updateTaskStatus(task.id, TaskStatus.completed, userName, reportData: {
-                      'reportDescription': descriptionController.text,
-                      'siteLocation': locationController.text,
-                      'gpsLocation': gpsController.text,
-                    });
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chantier finalisé ! En attente d\'approbation.'), backgroundColor: Colors.orange));
-                  },
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                  child: const Text('FINALISER'),
-                ),
-              ],
             ),
-        ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('ANNULER')),
+            if (canEdit)
+              ElevatedButton(
+                onPressed: () async {
+                  String? techSignBase64;
+                  String? clientSignBase64;
+                  String? signatureGps;
+
+                  if (techSignController.isNotEmpty) {
+                    final data = await techSignController.toPngBytes();
+                    if (data != null) techSignBase64 = base64Encode(data);
+                  }
+
+                  if (clientSignController.isNotEmpty) {
+                    final data = await clientSignController.toPngBytes();
+                    if (data != null) {
+                      clientSignBase64 = base64Encode(data);
+                      // RÉCUPÉRATION SILENCIEUSE DE LA LOCALISATION
+                      try {
+                        Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+                        signatureGps = "${position.latitude}, ${position.longitude}";
+                      } catch (e) {
+                        debugPrint('GPS Silent Error: $e');
+                      }
+                    }
+                  }
+
+                  await service.updateTaskStatus(task.id, TaskStatus.completed, userName, reportData: {
+                    'reportDescription': descriptionController.text,
+                    'siteLocation': locationController.text,
+                    'technicianSignature': techSignBase64,
+                    'clientSignature': clientSignBase64,
+                    'signatureGps': signatureGps,
+                  });
+
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chantier finalisé avec signatures !'), backgroundColor: Colors.green));
+                  }
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                child: const Text('FINALISER LE RAPPORT'),
+              ),
+          ],
+        ),
       ),
     );
   }

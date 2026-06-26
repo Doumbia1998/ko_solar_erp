@@ -61,6 +61,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   bool _canViewDeliveries = false;
   bool _canManagePayroll = false;
   bool _canImportExport = false;
+  bool _canManageWarehouses = false;
+  bool _canManageTasks = false;
+  bool _canViewStockMovements = false;
 
   @override
   Widget build(BuildContext context) {
@@ -288,6 +291,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     _canViewDeliveries = user.canViewDeliveries;
     _canManagePayroll = user.canManagePayroll;
     _canImportExport = user.canImportExport;
+    _canManageWarehouses = user.canManageWarehouses;
+    _canManageTasks = user.canManageTasks;
+    _canViewStockMovements = user.canViewStockMovements;
 
     final service = context.read<FirestoreService>();
 
@@ -328,49 +334,56 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                   ),
                 ],
                 const Divider(),
-                const Text('Permissions Commerciales', style: TextStyle(fontWeight: FontWeight.bold)),
-                _buildPermissionSwitch(setDialogState, 'Voir Achats', _canViewPurchases, (v) => _canViewPurchases = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Ventes', _canViewSales, (v) => _canViewSales = v),
-                _buildPermissionSwitch(setDialogState, 'Supprimer Ventes', _canDeleteSales, (v) => _canDeleteSales = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Produits', _canViewProducts, (v) => _canViewProducts = v),
-                _buildPermissionSwitch(setDialogState, 'Créer/Modif Produits', _canEditProducts, (v) => _canEditProducts = v),
-                _buildPermissionSwitch(setDialogState, 'Supprimer Produits', _canDeleteProducts, (v) => _canDeleteProducts = v),
-                _buildPermissionSwitch(setDialogState, 'Gérer Utilisateurs', _canManageUsers, (v) => _canManageUsers = v),
+                const Text('📊 Permissions Commerciales', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
+                _buildPermissionSwitch(setDialogState, 'Voir les Achats', _canViewPurchases, (v) => _canViewPurchases = v),
+                _buildPermissionSwitch(setDialogState, 'Voir les Ventes', _canViewSales, (v) => _canViewSales = v),
+                _buildPermissionSwitch(setDialogState, 'Supprimer des Ventes', _canDeleteSales, (v) => _canDeleteSales = v),
+                _buildPermissionSwitch(setDialogState, 'Voir les Produits', _canViewProducts, (v) => _canViewProducts = v),
+                _buildPermissionSwitch(setDialogState, 'Créer/Modifier Produits', _canEditProducts, (v) => _canEditProducts = v),
+                _buildPermissionSwitch(setDialogState, 'Supprimer des Produits', _canDeleteProducts, (v) => _canDeleteProducts = v),
+                _buildPermissionSwitch(setDialogState, 'Gérer les Utilisateurs', _canManageUsers, (v) => _canManageUsers = v),
+
                 const Divider(),
-                const Text('Clients & Fournisseurs', style: TextStyle(fontWeight: FontWeight.bold)),
-                _buildPermissionSwitch(setDialogState, 'Voir Clients', _canViewClients, (v) => _canViewClients = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Fournisseurs', _canViewSuppliers, (v) => _canViewSuppliers = v),
+                const Text('👥 Clients & Fournisseurs', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
+                _buildPermissionSwitch(setDialogState, 'Voir les Clients', _canViewClients, (v) => _canViewClients = v),
+                _buildPermissionSwitch(setDialogState, 'Voir les Fournisseurs', _canViewSuppliers, (v) => _canViewSuppliers = v),
                 _buildPermissionSwitch(setDialogState, 'Créer/Modifier Tiers', _canEditTiers, (v) => _canEditTiers = v),
-                _buildPermissionSwitch(setDialogState, 'Supprimer Tiers', _canDeleteTiers, (v) => _canDeleteTiers = v),
+                _buildPermissionSwitch(setDialogState, 'Supprimer des Tiers', _canDeleteTiers, (v) => _canDeleteTiers = v),
+
                 const Divider(),
-                const Text('Règlements & Trésorerie', style: TextStyle(fontWeight: FontWeight.bold)),
-                _buildPermissionSwitch(setDialogState, 'Voir Hist. Règlements', _canViewPayments, (v) => _canViewPayments = v),
-                _buildPermissionSwitch(setDialogState, 'Faire Règl. Client (Encais.)', _canAddClientPayment, (v) => _canAddClientPayment = v),
-                _buildPermissionSwitch(setDialogState, 'Faire Règl. Fourn. (Décais.)', _canAddSupplierPayment, (v) => _canAddSupplierPayment = v),
-                _buildPermissionSwitch(setDialogState, 'Supprimer Règlements', _canDeletePayment, (v) => _canDeletePayment = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Contrôle de Caisse', _canViewCashControl, (v) => _canViewCashControl = v),
-                _buildPermissionSwitch(setDialogState, 'Gérer Rapprochement Banc.', _canManageReconciliation, (v) => _canManageReconciliation = v),
+                const Text('💰 Règlements & Trésorerie', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
+                _buildPermissionSwitch(setDialogState, 'Voir Historique Règlements', _canViewPayments, (v) => _canViewPayments = v),
+                _buildPermissionSwitch(setDialogState, 'Effectuer Règl. Client', _canAddClientPayment, (v) => _canAddClientPayment = v),
+                _buildPermissionSwitch(setDialogState, 'Effectuer Règl. Fournisseur', _canAddSupplierPayment, (v) => _canAddSupplierPayment = v),
+                _buildPermissionSwitch(setDialogState, 'Supprimer des Règlements', _canDeletePayment, (v) => _canDeletePayment = v),
+                _buildPermissionSwitch(setDialogState, 'Accès Contrôle de Caisse', _canViewCashControl, (v) => _canViewCashControl = v),
+                _buildPermissionSwitch(setDialogState, 'Gérer Rapprochement Bancaire', _canManageReconciliation, (v) => _canManageReconciliation = v),
+
                 const Divider(),
-                const Text('Comptabilité & Rapports', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('📓 Comptabilité & Rapports', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
                 _buildPermissionSwitch(setDialogState, 'Voir État des Impayés', _canViewUnpaidReport, (v) => _canViewUnpaidReport = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Plan Comptable', _canViewPlanComptable, (v) => _canViewPlanComptable = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Journal Comptable', _canViewJournalComptable, (v) => _canViewJournalComptable = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Balance des Comptes', _canViewTrialBalance, (v) => _canViewTrialBalance = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Balance Agée', _canViewAgedBalance, (v) => _canViewAgedBalance = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Balance Agée Clients', _canViewAgedBalance, (v) => _canViewAgedBalance = v),
                 _buildPermissionSwitch(setDialogState, 'Gérer Exercices Comptables', _canManageFiscalYears, (v) => _canManageFiscalYears = v),
+
                 const Divider(),
-                const Text('Modules Avancés', style: TextStyle(fontWeight: FontWeight.bold)),
-                _buildPermissionSwitch(setDialogState, 'Voir Transport', _canViewTransport, (v) => _canViewTransport = v),
+                const Text('🚀 Modules Avancés', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
+                _buildPermissionSwitch(setDialogState, 'Voir Transport & Logistique', _canViewTransport, (v) => _canViewTransport = v),
                 _buildPermissionSwitch(setDialogState, 'Gérer Transport', _canEditTransport, (v) => _canEditTransport = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Audit/Traçabilité', _canViewAudit, (v) => _canViewAudit = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Dépenses', _canViewExpenses, (v) => _canViewExpenses = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Avances', _canViewAdvances, (v) => _canViewAdvances = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Transferts Stock', _canViewTransfers, (v) => _canViewTransfers = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Relance Impayés', _canViewReminders, (v) => _canViewReminders = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Audit & Traçabilité', _canViewAudit, (v) => _canViewAudit = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Gestion des Dépenses', _canViewExpenses, (v) => _canViewExpenses = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Gestion des Avances', _canViewAdvances, (v) => _canViewAdvances = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Transferts de Stock', _canViewTransfers, (v) => _canViewTransfers = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Relance des Impayés', _canViewReminders, (v) => _canViewReminders = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Alertes Météo', _canViewWeather, (v) => _canViewWeather = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Livraisons (BL)', _canViewDeliveries, (v) => _canViewDeliveries = v),
                 _buildPermissionSwitch(setDialogState, 'Gérer la Paie', _canManagePayroll, (v) => _canManagePayroll = v),
-                _buildPermissionSwitch(setDialogState, 'Import / Export Sage', _canImportExport, (v) => _canImportExport = v),
+                _buildPermissionSwitch(setDialogState, 'Accès Import/Export Sage', _canImportExport, (v) => _canImportExport = v),
+                _buildPermissionSwitch(setDialogState, 'Gérer les Dépôts', _canManageWarehouses, (v) => _canManageWarehouses = v),
+                _buildPermissionSwitch(setDialogState, 'Gérer les Chantiers', _canManageTasks, (v) => _canManageTasks = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Mouvements de Stock', _canViewStockMovements, (v) => _canViewStockMovements = v),
               ],
             ),
           ),
@@ -378,6 +391,16 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
             ElevatedButton(
               onPressed: () async {
+                // On calcule automatiquement si l'utilisateur doit voir le menu Comptabilité
+                bool hasAnyAccountingPermission = _canViewUnpaidReport ||
+                    _canViewPlanComptable ||
+                    _canViewJournalComptable ||
+                    _canViewTrialBalance ||
+                    _canViewAgedBalance ||
+                    _canViewCashControl ||
+                    _canManageFiscalYears ||
+                    _canManageReconciliation;
+
                 final updatedUser = AppUser(
                   uid: user.uid,
                   email: user.email,
@@ -401,6 +424,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                   canAddClientPayment: _canAddClientPayment,
                   canAddSupplierPayment: _canAddSupplierPayment,
                   canDeletePayment: _canDeletePayment,
+                  canViewAccounting: hasAnyAccountingPermission, // Activé automatiquement
                   canViewUnpaidReport: _canViewUnpaidReport,
                   canViewPlanComptable: _canViewPlanComptable,
                   canViewJournalComptable: _canViewJournalComptable,
@@ -418,6 +442,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                   canViewDeliveries: _canViewDeliveries,
                   canManagePayroll: _canManagePayroll,
                   canImportExport: _canImportExport,
+                  canManageWarehouses: _canManageWarehouses,
+                  canManageTasks: _canManageTasks,
+                  canViewStockMovements: _canViewStockMovements,
                 );
                 await FirebaseFirestore.instance.collection('users').doc(user.uid).set(updatedUser.toMap());
                 Navigator.pop(context);
@@ -439,7 +466,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     _selectedWarehouseId = null;
     // Reset permissions
     _canViewSales = _canViewProducts = _canViewClients = _canViewSuppliers = true;
-    _canViewPurchases = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canManageUsers = _canEditTiers = _canDeleteTiers = _canViewTransport = _canEditTransport = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = _canManagePayroll = _canImportExport = _canViewTrialBalance = _canViewAgedBalance = _canViewCashControl = _canViewPayments = _canAddClientPayment = _canAddSupplierPayment = _canDeletePayment = _canManageFiscalYears = _canManageReconciliation = _canViewUnpaidReport = _canViewPlanComptable = _canViewJournalComptable = false;
+    _canViewPurchases = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canManageUsers = _canEditTiers = _canDeleteTiers = _canViewTransport = _canEditTransport = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = _canManagePayroll = _canImportExport = _canManageWarehouses = _canManageTasks = _canViewTrialBalance = _canViewAgedBalance = _canViewCashControl = _canViewPayments = _canAddClientPayment = _canAddSupplierPayment = _canDeletePayment = _canManageFiscalYears = _canManageReconciliation = _canViewUnpaidReport = _canViewPlanComptable = _canViewJournalComptable = false;
     
     final service = context.read<FirestoreService>();
 
@@ -470,37 +497,39 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                     setDialogState(() {
                       _selectedRole = val!;
                       if (_selectedRole == UserRole.admin) {
-                        _canViewPurchases = _canViewSales = _canDeleteSales = _canViewProducts = _canEditProducts = _canDeleteProducts = _canManageUsers = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = _canManagePayroll = _canImportExport = _canViewTrialBalance = _canViewAgedBalance = _canViewCashControl = _canViewPayments = _canAddClientPayment = _canAddSupplierPayment = _canDeletePayment = _canManageFiscalYears = _canManageReconciliation = _canViewUnpaidReport = _canViewPlanComptable = _canViewJournalComptable = true;
+                        _canViewPurchases = _canViewSales = _canDeleteSales = _canViewProducts = _canEditProducts = _canDeleteProducts = _canManageUsers = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = _canManagePayroll = _canImportExport = _canManageWarehouses = _canManageTasks = _canViewTrialBalance = _canViewAgedBalance = _canViewCashControl = _canViewPayments = _canAddClientPayment = _canAddSupplierPayment = _canDeletePayment = _canManageFiscalYears = _canManageReconciliation = _canViewUnpaidReport = _canViewPlanComptable = _canViewJournalComptable = true;
                         _canViewClients = _canViewSuppliers = true;
                       } else {
                         _canViewSales = _canViewProducts = _canViewClients = _canViewSuppliers = true;
-                        _canViewPurchases = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canManageUsers = _canEditTiers = _canDeleteTiers = _canViewTransport = _canEditTransport = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = _canViewPayments = _canAddClientPayment = _canAddSupplierPayment = _canDeletePayment = _canManageFiscalYears = _canManageReconciliation = _canViewUnpaidReport = _canViewPlanComptable = _canViewJournalComptable = false;
+                        _canViewPurchases = _canDeleteSales = _canEditProducts = _canDeleteProducts = _canManageUsers = _canEditTiers = _canDeleteTiers = _canViewTransport = _canEditTransport = _canViewAudit = _canViewExpenses = _canViewAdvances = _canViewTransfers = _canViewReminders = _canViewWeather = _canViewDeliveries = _canManageWarehouses = _canManageTasks = _canViewPayments = _canAddClientPayment = _canAddSupplierPayment = _canDeletePayment = _canManageFiscalYears = _canManageReconciliation = _canViewUnpaidReport = _canViewPlanComptable = _canViewJournalComptable = false;
                       }
                     });
                   },
                 ),
                 const Divider(),
-                const Text('Permissions détaillées', style: TextStyle(fontWeight: FontWeight.bold)),
-                _buildPermissionSwitch(setDialogState, 'Voir Achats', _canViewPurchases, (v) => _canViewPurchases = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Ventes', _canViewSales, (v) => _canViewSales = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Produits', _canViewProducts, (v) => _canViewProducts = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Clients', _canViewClients, (v) => _canViewClients = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Fournisseurs', _canViewSuppliers, (v) => _canViewSuppliers = v),
+                const Text('📊 Permissions détaillées', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
+                _buildPermissionSwitch(setDialogState, 'Voir les Achats', _canViewPurchases, (v) => _canViewPurchases = v),
+                _buildPermissionSwitch(setDialogState, 'Voir les Ventes', _canViewSales, (v) => _canViewSales = v),
+                _buildPermissionSwitch(setDialogState, 'Voir les Produits', _canViewProducts, (v) => _canViewProducts = v),
+                _buildPermissionSwitch(setDialogState, 'Voir les Clients', _canViewClients, (v) => _canViewClients = v),
+                _buildPermissionSwitch(setDialogState, 'Voir les Fournisseurs', _canViewSuppliers, (v) => _canViewSuppliers = v),
                 const Divider(),
-                _buildPermissionSwitch(setDialogState, 'Voir Hist. Règlements', _canViewPayments, (v) => _canViewPayments = v),
+                const Text('💰 Trésorerie & Comptabilité', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
+                _buildPermissionSwitch(setDialogState, 'Voir Historique Règlements', _canViewPayments, (v) => _canViewPayments = v),
                 _buildPermissionSwitch(setDialogState, 'Faire Règl. Client', _canAddClientPayment, (v) => _canAddClientPayment = v),
                 _buildPermissionSwitch(setDialogState, 'Faire Règl. Fournisseur', _canAddSupplierPayment, (v) => _canAddSupplierPayment = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Contrôle de Caisse', _canViewCashControl, (v) => _canViewCashControl = v),
+                _buildPermissionSwitch(setDialogState, 'Accès Contrôle de Caisse', _canViewCashControl, (v) => _canViewCashControl = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Balance des Comptes', _canViewTrialBalance, (v) => _canViewTrialBalance = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Balance Agée', _canViewAgedBalance, (v) => _canViewAgedBalance = v),
                 _buildPermissionSwitch(setDialogState, 'Voir État des Impayés', _canViewUnpaidReport, (v) => _canViewUnpaidReport = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Plan Comptable', _canViewPlanComptable, (v) => _canViewPlanComptable = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Journal Comptable', _canViewJournalComptable, (v) => _canViewJournalComptable = v),
-                _buildPermissionSwitch(setDialogState, 'Gérer Exercices Compt.', _canManageFiscalYears, (v) => _canManageFiscalYears = v),
-                _buildPermissionSwitch(setDialogState, 'Gérer Rapprochement Banc.', _canManageReconciliation, (v) => _canManageReconciliation = v),
+                _buildPermissionSwitch(setDialogState, 'Gérer Exercices Comptables', _canManageFiscalYears, (v) => _canManageFiscalYears = v),
+                _buildPermissionSwitch(setDialogState, 'Gérer Rapprochement Bancaire', _canManageReconciliation, (v) => _canManageReconciliation = v),
                 const Divider(),
+                const Text('🚀 Autres Modules', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
                 _buildPermissionSwitch(setDialogState, 'Voir Transport', _canViewTransport, (v) => _canViewTransport = v),
-                _buildPermissionSwitch(setDialogState, 'Voir Audit', _canViewAudit, (v) => _canViewAudit = v),
+                _buildPermissionSwitch(setDialogState, 'Voir Audit & Traçabilité', _canViewAudit, (v) => _canViewAudit = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Dépenses', _canViewExpenses, (v) => _canViewExpenses = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Avances', _canViewAdvances, (v) => _canViewAdvances = v),
                 _buildPermissionSwitch(setDialogState, 'Voir Transferts', _canViewTransfers, (v) => _canViewTransfers = v),
@@ -541,6 +570,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                     canAddClientPayment: _canAddClientPayment,
                     canAddSupplierPayment: _canAddSupplierPayment,
                     canDeletePayment: _canDeletePayment,
+                    canViewAccounting: _canViewUnpaidReport || _canViewPlanComptable || _canViewJournalComptable || _canViewTrialBalance || _canViewAgedBalance || _canViewCashControl || _canManageFiscalYears || _canManageReconciliation,
                     canViewUnpaidReport: _canViewUnpaidReport,
                     canViewPlanComptable: _canViewPlanComptable,
                     canViewJournalComptable: _canViewJournalComptable,

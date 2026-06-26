@@ -269,13 +269,13 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
                                                   crossAxisAlignment: CrossAxisAlignment.start,
                                                   mainAxisAlignment: MainAxisAlignment.center,
                                                   children: [
-                                                    Text(e.method, style: TextStyle(fontWeight: isAdvance ? FontWeight.bold : FontWeight.normal, color: isAdvance ? Colors.blue.shade800 : Colors.black)),
+                                                    _rowMethodDropdown(e, service, canAdd),
                                                     if (e.createdBy.isNotEmpty)
                                                       Text('Fait par: ${e.createdBy}', style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.blueGrey)),
                                                   ],
                                                 )),
                                                 DataCell(Text(_format.format(e.amount).replaceAll(',', ' '), style: TextStyle(color: isAdvance ? Colors.blue.shade800 : Colors.blue, fontWeight: FontWeight.bold))),
-                                                DataCell(_rowJournalDropdown(e, service, isAdmin)),
+                                                DataCell(_rowJournalDropdown(e, service, canAdd)),
                                                 DataCell(canDelete ? IconButton(icon: const Icon(Icons.delete, color: Colors.red, size: 18), onPressed: () async {
                                                   final auth = Provider.of<AuthService>(context, listen: false);
                                                   final user = await auth.getAppUser((await auth.user.first)!.uid);
@@ -354,7 +354,7 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
     );
   }
 
-  Widget _rowJournalDropdown(Payment p, FirestoreService service, bool isAdmin) {
+  Widget _rowJournalDropdown(Payment p, FirestoreService service, bool canEdit) {
     return StreamBuilder<List<JournalConfig>>(
       stream: service.getJournalConfigs(),
       builder: (context, snapshot) {
@@ -364,8 +364,28 @@ class _ProfessionalPaymentScreenState extends State<ProfessionalPaymentScreen> {
             value: p.journalCode ?? 'CA',
             style: const TextStyle(fontSize: 12, color: Colors.black),
             items: configs.map((c) => DropdownMenuItem(value: c.code, child: Text(c.code))).toList(),
-            onChanged: isAdmin ? (val) async {
+            onChanged: canEdit ? (val) async {
               await service.updatePaymentJournal(p.id, val!);
+            } : null,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _rowMethodDropdown(Payment p, FirestoreService service, bool canEdit) {
+    return StreamBuilder<List<PaymentMethodConfig>>(
+      stream: service.getPaymentMethodConfigs(),
+      builder: (context, snapshot) {
+        final methods = snapshot.data ?? [];
+        return DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: p.method,
+            isExpanded: false,
+            style: TextStyle(fontSize: 12, color: p.method == 'Utilisation Avance' ? Colors.blue.shade800 : Colors.black, fontWeight: p.method == 'Utilisation Avance' ? FontWeight.bold : FontWeight.normal),
+            items: methods.map((m) => DropdownMenuItem(value: m.name, child: Text(m.name))).toList(),
+            onChanged: canEdit ? (val) async {
+              await service.updatePaymentMethod(p.id, val!);
             } : null,
           ),
         );
@@ -570,6 +590,13 @@ class _MaturitySelectionDialogState extends State<MaturitySelectionDialog> {
   double _montantRegle = 0;
   final _montantRegleController = TextEditingController();
   String? _selectedMode;
+  String? _selectedJournal;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedJournal = widget.journalCode;
+  }
 
   @override
   void dispose() {
@@ -636,6 +663,27 @@ class _MaturitySelectionDialogState extends State<MaturitySelectionDialog> {
                             value: _selectedMode,
                             items: methods.map((m) => DropdownMenuItem(value: m.name, child: Padding(padding: const EdgeInsets.only(left: 8), child: Text(m.name)))).toList(),
                             onChanged: (v) => setState(() => _selectedMode = v),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 15),
+                  const Text('Journal : ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                  StreamBuilder<List<JournalConfig>>(
+                    stream: widget.service.getJournalConfigs(),
+                    builder: (context, snapshot) {
+                      final configs = snapshot.data ?? [];
+                      if (_selectedJournal == null && configs.isNotEmpty) _selectedJournal = configs.first.code;
+                      return Container(
+                        width: 100,
+                        height: 40,
+                        decoration: BoxDecoration(border: Border.all(color: Colors.grey), borderRadius: BorderRadius.circular(4)),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _selectedJournal,
+                            items: configs.map((c) => DropdownMenuItem(value: c.code, child: Padding(padding: const EdgeInsets.only(left: 8), child: Text(c.code)))).toList(),
+                            onChanged: (v) => setState(() => _selectedJournal = v),
                           ),
                         ),
                       );
@@ -794,7 +842,7 @@ class _MaturitySelectionDialogState extends State<MaturitySelectionDialog> {
         amount: entry.value,
         date: DateTime.now(),
         method: _selectedMode ?? 'Imputation',
-        journalCode: widget.journalCode,
+        journalCode: _selectedJournal,
         reference: 'REG-${entry.key}',
         invoiceNumber: entry.key
       );

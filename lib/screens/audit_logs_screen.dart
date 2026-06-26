@@ -61,14 +61,14 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
               stream: FirebaseFirestore.instance
                   .collection('audit_logs')
                   .orderBy('timestamp', descending: true)
-                  .limit(200) // On limite aux 200 derniers pour la performance
+                  .limit(200)
                   .snapshots(),
               builder: (context, snapshot) {
+                if (snapshot.hasError) return Center(child: Text('Erreur : ${snapshot.error}'));
                 if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
                 var logs = snapshot.data!.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
 
-                // Filtrage par recherche
                 if (_searchQuery.isNotEmpty) {
                   logs = logs.where((log) {
                     final user = (log['userName'] ?? '').toString().toLowerCase();
@@ -77,7 +77,6 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
                   }).toList();
                 }
 
-                // Filtrage par date
                 if (_selectedDate != null) {
                   logs = logs.where((log) {
                     final ts = log['timestamp'] as Timestamp?;

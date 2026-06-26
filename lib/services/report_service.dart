@@ -321,7 +321,7 @@ class ReportService {
     final now = DateTime.now();
     final dateStr = DateFormat('dd/MM/yyyy').format(now);
 
-    String period = "Periode : ";
+    String period = "Période : ";
     if (start != null && end != null) {
       period += "${DateFormat('dd/MM/yy').format(start)} au ${DateFormat('dd/MM/yy').format(end)}";
     } else {
@@ -339,20 +339,13 @@ class ReportService {
                 pw.Text(period, style: const pw.TextStyle(fontSize: 10)),
               ],
             ),
-            pw.SizedBox(height: 5),
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Text('K-O SOLAR', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
-              ]
-            ),
             pw.Divider(),
             pw.SizedBox(height: 10),
             pw.Center(
               child: pw.Text(
                 tierName != null
-                  ? 'HISTORIQUE DES REGLEMENTS : ${tierName.toUpperCase()}'
-                  : 'RECAPITULATIF GLOBAL DES REGLEMENTS ${type.toUpperCase()}S',
+                  ? 'HISTORIQUE DES RÈGLEMENTS : ${tierName.toUpperCase()}'
+                  : 'RÉCAPITULATIF GLOBAL DES RÈGLEMENTS ${type.toUpperCase()}S',
                 style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)
               )
             ),
@@ -361,10 +354,19 @@ class ReportService {
         ),
         build: (pw.Context context) => [
           pw.TableHelper.fromTextArray(
-            headers: ['Date', 'Tiers', 'Reference / Facture', 'Mode', 'Journal', 'Montant'],
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+            headers: ['Date', 'Tiers', 'Référence / Facture', 'Mode', 'Journal', 'Montant'],
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white, fontSize: 10),
             headerDecoration: const pw.BoxDecoration(color: PdfColors.blueGrey900),
             cellAlignment: pw.Alignment.center,
+            cellStyle: const pw.TextStyle(fontSize: 9),
+            columnWidths: {
+              0: const pw.FixedColumnWidth(60), // Date
+              1: const pw.FlexColumnWidth(3),   // Tiers (Plus large)
+              2: const pw.FlexColumnWidth(2.5), // Référence (élargie)
+              3: const pw.FixedColumnWidth(100),// Mode
+              4: const pw.FixedColumnWidth(50), // Journal
+              5: const pw.FixedColumnWidth(90), // Montant
+            },
             data: payments.map((p) => [
               DateFormat('dd/MM/yy').format(p.date),
               p.tierName.toUpperCase(),
@@ -381,9 +383,11 @@ class ReportService {
               padding: const pw.EdgeInsets.all(10),
               decoration: pw.BoxDecoration(border: pw.Border.all(), color: PdfColors.grey100),
               child: pw.Text('TOTAL : ${_format.format(payments.fold(0.0, (sum, p) => sum + p.amount))} FCFA',
-                style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+                style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
             ),
           ),
+          pw.Spacer(),
+          pw.Align(alignment: pw.Alignment.centerRight, child: pw.Text('Développé par MLD Consulting', style: pw.TextStyle(fontSize: 7, fontStyle: pw.FontStyle.italic))),
         ],
       ),
     );

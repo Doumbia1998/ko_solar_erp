@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/tier.dart';
+import '../models/app_user.dart';
 import '../services/firestore_service.dart';
 
 class TierFormScreen extends StatefulWidget {
@@ -169,11 +170,14 @@ class _TierFormScreenState extends State<TierFormScreen> {
                             compteGeneral: _compteGeneral,
                             compteTiers: _compteTiersController.text.trim().toUpperCase(),
                           );
-                          
+
+                          final currentUser = context.read<AppUser?>();
+                          final userName = currentUser?.displayName ?? 'Inconnu';
+
                           if (widget.tier == null) {
-                            await firestoreService.addTier(tier);
+                            await firestoreService.addTier(tier, userName);
                           } else {
-                            await firestoreService.updateTier(tier);
+                            await firestoreService.updateTier(tier, userName);
                           }
                           if (mounted) Navigator.pop(context);
                         }

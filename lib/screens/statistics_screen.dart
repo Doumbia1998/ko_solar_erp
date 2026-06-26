@@ -123,19 +123,39 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                       subtitle: 'Soit ${pourcentageMarge.toStringAsFixed(1)}% de rentabilité'
                     ),
                     const SizedBox(height: 20),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1A237E), foregroundColor: Colors.white),
-                      icon: const Icon(Icons.picture_as_pdf),
-                      label: const Text('Générer Rapport Détaillé PDF'),
-                      onPressed: () => PdfService.generateProfitReport(
-                        start: _selectedDateRange!.start,
-                        end: _selectedDateRange!.end,
-                        totalCA: totalCA,
-                        totalCout: totalCoutAchat,
-                        marge: margeBrute,
-                        pourcentage: pourcentageMarge,
-                        productStats: productStats,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1A237E), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 15)),
+                            icon: const Icon(Icons.analytics),
+                            label: const Text('Rapport Marges'),
+                            onPressed: () => PdfService.generateProfitReport(
+                              start: _selectedDateRange!.start,
+                              end: _selectedDateRange!.end,
+                              totalCA: totalCA,
+                              totalCout: totalCoutAchat,
+                              marge: margeBrute,
+                              pourcentage: pourcentageMarge,
+                              productStats: productStats,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade800, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 15)),
+                            icon: const Icon(Icons.leaderboard),
+                            label: const Text('Palmarès Ventes'),
+                            onPressed: () => PdfService.generateSalesRankingReport(
+                              start: _selectedDateRange!.start,
+                              end: _selectedDateRange!.end,
+                              productStats: productStats,
+                              grandTotalCA: totalCA,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

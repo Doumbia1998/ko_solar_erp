@@ -23,6 +23,7 @@ class _WeatherAlertScreenState extends State<WeatherAlertScreen> {
   );
 
   String _searchQuery = "";
+  final List<String> _selectedClientIds = [];
 
   @override
   Widget build(BuildContext context) {
@@ -60,6 +61,18 @@ class _WeatherAlertScreenState extends State<WeatherAlertScreen> {
                   const SizedBox(height: 20),
                   const Icon(Icons.info_outline, color: Colors.blue),
                   const Text('Le message sera envoyé individuellement à chaque client sélectionné.', style: TextStyle(fontSize: 12, color: Colors.blueGrey)),
+                  const Spacer(),
+                  if (_selectedClientIds.isNotEmpty)
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        onPressed: _sendToSelected,
+                        icon: const Icon(Icons.send),
+                        label: Text('ENVOYER À (${_selectedClientIds.length}) SÉLECTIONNÉS'),
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -73,7 +86,32 @@ class _WeatherAlertScreenState extends State<WeatherAlertScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('2. SÉLECTIONNER LES DESTINATAIRES', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('2. SÉLECTIONNER LES DESTINATAIRES', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      StreamBuilder<List<Tier>>(
+                        stream: service.getTiers(TierType.client),
+                        builder: (context, snapshot) {
+                          final clients = snapshot.data ?? [];
+                          return TextButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                if (_selectedClientIds.length == clients.length) {
+                                  _selectedClientIds.clear();
+                                } else {
+                                  _selectedClientIds.clear();
+                                  _selectedClientIds.addAll(clients.map((c) => c.id));
+                                }
+                              });
+                            },
+                            icon: Icon(_selectedClientIds.length == clients.length ? Icons.deselect : Icons.select_all),
+                            label: Text(_selectedClientIds.length == clients.length ? 'TOUT DÉSELECTIONNER' : 'TOUT SÉLECTIONNER'),
+                          );
+                        }
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 15),
                   TextField(
                     onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
@@ -100,14 +138,23 @@ class _WeatherAlertScreenState extends State<WeatherAlertScreen> {
                           separatorBuilder: (context, index) => const Divider(),
                           itemBuilder: (context, index) {
                             final c = clients[index];
-                            return ListTile(
+                            final isSelected = _selectedClientIds.contains(c.id);
+                            return CheckboxListTile(
+                              value: isSelected,
+                              onChanged: (val) {
+                                setState(() {
+                                  if (val == true) {
+                                    _selectedClientIds.add(c.id);
+                                  } else {
+                                    _selectedClientIds.remove(c.id);
+                                  }
+                                });
+                              },
                               title: Text(c.name.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold)),
                               subtitle: Text(c.phone),
-                              trailing: ElevatedButton.icon(
-                                onPressed: () => _sendToClient(c),
-                                icon: const Icon(Icons.send, size: 16),
-                                label: const Text('ENVOYER'),
-                                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                              secondary: CircleAvatar(
+                                backgroundColor: isSelected ? Colors.green : Colors.grey.shade200,
+                                child: Icon(isSelected ? Icons.check : Icons.person, color: isSelected ? Colors.white : Colors.grey),
                               ),
                             );
                           },
@@ -122,6 +169,18 @@ class _WeatherAlertScreenState extends State<WeatherAlertScreen> {
         ],
       ),
     );
+  }
+
+  void _sendToSelected() async {
+    final service = Provider.of<FirestoreService>(context, listen: false);
+    final allClients = await service.getTiers(TierType.client).first;
+    final selectedClients = allClients.where((c) => _selectedClientIds.contains(c.id)).toList();
+
+    for (var client in selectedClients) {
+      await _sendToClient(client);
+      // On ajoute un petit délai pour éviter de saturer le navigateur
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
   }
 
   Future<void> _sendToClient(Tier client) async {

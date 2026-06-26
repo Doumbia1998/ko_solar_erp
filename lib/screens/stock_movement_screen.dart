@@ -6,6 +6,7 @@ import '../services/pdf_service.dart';
 import '../models/transaction.dart';
 import '../models/product.dart';
 import '../models/stock_transfer.dart';
+import '../models/warehouse.dart';
 
 class StockMovementScreen extends StatefulWidget {
   const StockMovementScreen({super.key});
@@ -18,9 +19,26 @@ class _StockMovementScreenState extends State<StockMovementScreen> {
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 30));
   DateTime _endDate = DateTime.now();
   Product? _selectedProduct;
+  Warehouse? _selectedWarehouse;
 
-  void _printPdf(List<Map<String, dynamic>> movements) {
-    PdfService.generateStockMovementReport(movements, _startDate, _endDate);
+  void _printDetailedReport(FirestoreService service) async {
+    final products = await service.getProducts().first;
+    final transactions = await service.getTransactions().first;
+    final transfers = await service.getStockTransfers().first;
+
+    List<Product> targetProducts = products;
+    if (_selectedProduct != null) {
+      targetProducts = [products.firstWhere((p) => p.id == _selectedProduct!.id)];
+    }
+
+    await PdfService.generateDetailedStockMovementReport(
+      products: targetProducts,
+      transactions: transactions,
+      transfers: transfers,
+      start: _startDate,
+      end: _endDate,
+      warehouseName: _selectedWarehouse?.name,
+    );
   }
 
   @override
@@ -65,6 +83,38 @@ class _StockMovementScreenState extends State<StockMovementScreen> {
                                   items: [
                                     const DropdownMenuItem(value: null, child: Text('TOUS')),
                                     ...products.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name.toUpperCase()))),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1),
+                  StreamBuilder<List<Warehouse>>(
+                    stream: firestoreService.getWarehouses(),
+                    builder: (context, snapshot) {
+                      final warehouses = snapshot.data ?? [];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.warehouse, color: Colors.brown),
+                            const SizedBox(width: 15),
+                            const Text('Dépôt :', style: TextStyle(fontWeight: FontWeight.bold)),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String?>(
+                                  value: _selectedWarehouse?.id,
+                                  isExpanded: true,
+                                  hint: const Text('TOUS LES DÉPÔTS (GLOBAL)'),
+                                  onChanged: (id) => setState(() => _selectedWarehouse = id == null ? null : warehouses.firstWhere((w) => w.id == id)),
+                                  items: [
+                                    const DropdownMenuItem(value: null, child: Text('TOUS LES DÉPÔTS')),
+                                    ...warehouses.map((w) => DropdownMenuItem(value: w.id, child: Text(w.name.toUpperCase()))),
                                   ],
                                 ),
                               ),
@@ -125,6 +175,10 @@ class _StockMovementScreenState extends State<StockMovementScreen> {
                     for (var t in transactions) {
                       if (t.date.isAfter(_startDate.subtract(const Duration(seconds: 1))) && 
                           t.date.isBefore(_endDate.add(const Duration(days: 1)))) {
+
+                        // Si un dépôt est sélectionné, on ne garde que les transactions de ce dépôt
+                        if (_selectedWarehouse != null && t.warehouseId != _selectedWarehouse!.id) continue;
+
                         for (var item in t.items) {
                           if (_selectedProduct == null || item.productId == _selectedProduct!.id) {
                             movements.add({
@@ -145,16 +199,41 @@ class _StockMovementScreenState extends State<StockMovementScreen> {
                     for (var tr in transfers) {
                       if (tr.date.isAfter(_startDate.subtract(const Duration(seconds: 1))) && 
                           tr.date.isBefore(_endDate.add(const Duration(days: 1)))) {
-                        if (_selectedProduct == null || tr.productId == _selectedProduct!.id) {
-                          movements.add({
-                            'date': tr.date,
-                            'type': 'TRANSFERT',
-                            'ref': 'TRF',
-                            'tier': '${tr.fromWarehouseName} -> ${tr.toWarehouseName}',
-                            'qty': tr.quantity,
-                            'product': tr.productName,
-                            'color': Colors.blue,
-                          });
+
+                        for (var item in tr.items) {
+                          if (_selectedProduct == null || item.productId == _selectedProduct!.id) {
+
+                            double displayQty = item.quantity.toDouble();
+                            String typeLabel = 'TRANSFERT';
+                            Color displayColor = Colors.blue;
+
+                            if (_selectedWarehouse != null) {
+                              if (tr.toWarehouseId == _selectedWarehouse!.id) {
+                                typeLabel = 'TRF ENTRÉE';
+                                displayColor = Colors.green;
+                              } else if (tr.fromWarehouseId == _selectedWarehouse!.id) {
+                                typeLabel = 'TRF SORTIE';
+                                displayColor = Colors.red;
+                                displayQty = -displayQty;
+                              } else {
+                                // Le transfert ne concerne pas le dépôt sélectionné
+                                continue;
+                              }
+                            } else {
+                              // Mode global : le transfert ne change pas le stock total
+                              displayQty = 0;
+                            }
+
+                            movements.add({
+                              'date': tr.date,
+                              'type': typeLabel,
+                              'ref': tr.reference,
+                              'tier': '${tr.fromWarehouseName} -> ${tr.toWarehouseName}',
+                              'qty': displayQty,
+                              'product': item.productName,
+                              'color': displayColor,
+                            });
+                          }
                         }
                       }
                     }
@@ -171,9 +250,9 @@ class _StockMovementScreenState extends State<StockMovementScreen> {
                               Text('${movements.length} mouvements trouvés', style: const TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
                               ElevatedButton.icon(
                                 icon: const Icon(Icons.picture_as_pdf),
-                                label: const Text('IMPRIMER'),
-                                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[800], foregroundColor: Colors.white),
-                                onPressed: movements.isEmpty ? null : () => _printPdf(movements),
+                                label: const Text('MOUVEMENTS (MLD ERP)'),
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade900, foregroundColor: Colors.white),
+                                onPressed: () => _printDetailedReport(firestoreService),
                               ),
                             ],
                           ),
@@ -205,7 +284,7 @@ class _StockMovementScreenState extends State<StockMovementScreen> {
                                     ],
                                   ),
                                   trailing: Text(
-                                    '${m['type'] == 'SORTIE' ? '-' : '+'}${m['qty']}',
+                                    '${m['qty'] > 0 ? '+' : (m['qty'] < 0 ? '' : '')}${m['qty'] == 0 ? '0' : m['qty'].toInt()}',
                                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: m['color']),
                                   ),
                                 ),

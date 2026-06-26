@@ -19,6 +19,12 @@ class Task {
   final DateTime? completedAt;
   final String? siteLocation;
   final String? gpsLocation;
+  final String? signatureGps; // GPS au moment de la signature (confidentiel)
+
+  // Signatures (Base64)
+  final String? clientSignature;
+  final String? technicianSignature;
+  final String? supervisorSignature;
 
   // Approbation Responsable
   final String? managerComment;
@@ -60,6 +66,10 @@ class Task {
       'completedAt': completedAt != null ? Timestamp.fromDate(completedAt!) : null,
       'siteLocation': siteLocation,
       'gpsLocation': gpsLocation,
+      'signatureGps': signatureGps,
+      'clientSignature': clientSignature,
+      'technicianSignature': technicianSignature,
+      'supervisorSignature': supervisorSignature,
       'managerComment': managerComment,
       'approvedBy': approvedBy,
       'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
@@ -85,6 +95,10 @@ class Task {
       completedAt: map['completedAt'] != null ? (map['completedAt'] as Timestamp).toDate() : null,
       siteLocation: map['siteLocation'],
       gpsLocation: map['gpsLocation'],
+      signatureGps: map['signatureGps'],
+      clientSignature: map['clientSignature'],
+      technicianSignature: map['technicianSignature'],
+      supervisorSignature: map['supervisorSignature'],
       managerComment: map['managerComment'],
       approvedBy: map['approvedBy'],
       updatedAt: map['updatedAt'] != null ? (map['updatedAt'] as Timestamp).toDate() : null,

@@ -6,6 +6,7 @@ import '../models/tier.dart';
 import '../models/product.dart';
 import '../models/warehouse.dart';
 import '../models/payment.dart';
+import '../models/app_user.dart';
 import '../services/firestore_service.dart';
 import '../services/auth_service.dart';
 import 'tier_list_screen.dart';
@@ -52,8 +53,16 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
       _dueDate = widget.transaction!.dueDate;
       _isReturn = widget.transaction!.type == TransactionType.saleReturn ||
                   widget.transaction!.type == TransactionType.purchaseReturn;
+    }
 
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final currentUser = Provider.of<AppUser?>(context, listen: false);
+      if (currentUser != null) {
+        String act = widget.transaction == null ? 'Prépare un(e) ${widget.type.toString().split('.').last}' : 'Consulte ${widget.transaction!.invoiceNumber}';
+        context.read<FirestoreService>().updateUserActivity(currentUser.uid, currentUser.displayName, act);
+      }
+
+      if (widget.transaction != null) {
         final service = Provider.of<FirestoreService>(context, listen: false);
         final tiers = await service.getTiers(widget.type == TransactionType.sale ? TierType.client : TierType.supplier).first;
         final t = tiers.firstWhere((t) => t.id == widget.transaction!.tierId, 
@@ -82,8 +91,8 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
             _selectedWarehouse = w;
           });
         }
-      });
-    }
+      }
+    });
   }
 
   @override

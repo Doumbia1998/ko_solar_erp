@@ -63,6 +63,8 @@ class _UnpaidReminderScreenState extends State<UnpaidReminderScreen> {
 
                     final allTxs = snapshotTx.data!;
                     final allPays = snapshotPay.data!;
+                    final now = DateTime.now();
+                    final today = DateTime(now.year, now.month, now.day);
 
                     // Logique de filtrage en temps réel
                     var pendingMaturities = <Map<String, dynamic>>[];
@@ -118,15 +120,16 @@ class _UnpaidReminderScreenState extends State<UnpaidReminderScreen> {
                         final AppTransaction t = d['transaction'] as AppTransaction;
                         final double reste = d['remaining'] as double;
 
-                        final now = DateTime.now();
-                        final diff = t.dueDate!.difference(now).inDays;
+                        final dueDate = DateTime(t.dueDate!.year, t.dueDate!.month, t.dueDate!.day);
+                        final diffDays = today.difference(dueDate).inDays;
+
                         Color alertColor = Colors.green;
                         IconData alertIcon = Icons.timer;
 
-                        if (diff < 0) {
+                        if (diffDays >= 3) {
                           alertColor = Colors.red;
                           alertIcon = Icons.dangerous;
-                        } else if (diff <= 2) {
+                        } else if (diffDays >= 1) {
                           alertColor = Colors.orange;
                           alertIcon = Icons.warning_amber_rounded;
                         }
@@ -216,23 +219,33 @@ class _UnpaidReminderScreenState extends State<UnpaidReminderScreen> {
 
                   final allTxs = snapshotTx.data!;
                   final allPays = snapshotPay.data!;
+                  final now = DateTime.now();
 
                   List<Map<String, dynamic>> honored = [];
-                  for (var t in allTxs) {
-                    if (t.dueDate == null) continue;
+                    for (var t in allTxs) {
+                      if (t.dueDate == null) continue;
 
-                    final pays = allPays.where((p) => p.invoiceNumber == t.invoiceNumber || p.reference.contains(t.invoiceNumber)).toList();
-                    double totalPaid = pays.fold(0.0, (sum, p) => sum + p.amount);
+                      final normalizedDueDate = DateTime(t.dueDate!.year, t.dueDate!.month, t.dueDate!.day);
 
-                    bool acompteInPay = allPays.any((p) => p.invoiceNumber == t.invoiceNumber && p.reference.contains('Acompte'));
-                    if (!acompteInPay) totalPaid += t.amountPaid;
+                      final pays = allPays.where((p) => p.invoiceNumber == t.invoiceNumber || p.reference.contains(t.invoiceNumber)).toList();
+                      double totalPaid = pays.fold(0.0, (sum, p) => sum + p.amount);
 
-                    if (totalPaid >= t.netToPay - 100) {
-                      final List<Payment> sortedPays = List<Payment>.from(pays);
-                      sortedPays.sort((a, b) => b.date.compareTo(a.date));
-                      honored.add({'tx': t, 'payDate': sortedPays.isNotEmpty ? sortedPays.first.date : t.date});
+                      bool acompteInPay = allPays.any((p) => p.invoiceNumber == t.invoiceNumber && p.reference.contains('Acompte'));
+                      if (!acompteInPay) totalPaid += t.amountPaid;
+
+                      if (totalPaid >= t.netToPay - 100) {
+                        final List<Payment> sortedPays = List<Payment>.from(pays);
+                        sortedPays.sort((a, b) => b.date.compareTo(a.date));
+                        DateTime lastPayDate = sortedPays.isNotEmpty ? sortedPays.first.date : t.date;
+                        final normalizedPayDate = DateTime(lastPayDate.year, lastPayDate.month, lastPayDate.day);
+
+                        honored.add({
+                          'tx': t,
+                          'payDate': lastPayDate,
+                          'isLate': normalizedPayDate.isAfter(normalizedDueDate)
+                        });
+                      }
                     }
-                  }
 
                   if (honored.isEmpty) return const Center(child: Text('Aucune échéance honorée pour le moment.'));
 
@@ -242,15 +255,15 @@ class _UnpaidReminderScreenState extends State<UnpaidReminderScreen> {
                       final h = honored[index];
                       final AppTransaction t = h['tx'] as AppTransaction;
                       final DateTime pDate = h['payDate'] as DateTime;
-                      bool late = pDate.isAfter(t.dueDate!);
+                      final bool late = h['isLate'] as bool;
 
                       return ListTile(
-                        leading: Icon(Icons.verified, color: late ? Colors.orange : Colors.green),
+                        leading: Icon(Icons.verified, color: late ? Colors.red : Colors.green),
                         title: Text(t.tierName.toUpperCase()),
                         subtitle: Text('Facture : ${t.invoiceNumber}\nÉchéance : ${DateFormat('dd/MM/yy').format(t.dueDate!)}\nPayé le : ${DateFormat('dd/MM/yy').format(pDate)}'),
                         trailing: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(color: late ? Colors.orange : Colors.green, borderRadius: BorderRadius.circular(4)),
+                          decoration: BoxDecoration(color: late ? Colors.red : Colors.green, borderRadius: BorderRadius.circular(4)),
                           child: Text(late ? 'TARDIF' : 'À TEMPS', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
                         ),
                       );

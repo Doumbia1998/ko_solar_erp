@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/product.dart';
 import '../models/warehouse.dart';
 import '../models/account.dart';
+import '../models/app_user.dart';
 import '../services/firestore_service.dart';
 
 class ProductFormScreen extends StatefulWidget {
@@ -244,16 +245,6 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                                   return isMobile
                                     ? Column(
                                         children: [
-                                          TextFormField(
-                                            controller: _quantityController,
-                                            decoration: const InputDecoration(
-                                              labelText: 'Stock Initial',
-                                              prefixIcon: Icon(Icons.storage),
-                                              border: OutlineInputBorder(),
-                                            ),
-                                            keyboardType: TextInputType.number,
-                                          ),
-                                          const SizedBox(height: 20),
                                           DropdownButtonFormField<String>(
                                             value: _category,
                                             decoration: const InputDecoration(
@@ -264,42 +255,10 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                                             items: ['Divers', 'Pièces', 'Huiles'].map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                                             onChanged: (val) => setState(() => _category = val!),
                                           ),
-                                          if (widget.product == null) ...[
-                                            const SizedBox(height: 20),
-                                            StreamBuilder<List<Warehouse>>(
-                                              stream: service.getWarehouses(),
-                                              builder: (context, snapshot) {
-                                                final warehouses = snapshot.data ?? [];
-                                                return DropdownButtonFormField<Warehouse>(
-                                                  value: _selectedWarehouse,
-                                                  decoration: const InputDecoration(
-                                                    labelText: 'Dépôt de stockage initial',
-                                                    prefixIcon: Icon(Icons.warehouse),
-                                                    border: OutlineInputBorder(),
-                                                  ),
-                                                  items: warehouses.map((w) => DropdownMenuItem(value: w, child: Text(w.name))).toList(),
-                                                  onChanged: (val) => setState(() => _selectedWarehouse = val),
-                                                  validator: (val) => (int.tryParse(_quantityController.text) ?? 0) > 0 && val == null ? 'Dépôt requis pour le stock initial' : null,
-                                                );
-                                              },
-                                            ),
-                                          ],
                                         ],
                                       )
                                     : Row(
                                         children: [
-                                          Expanded(
-                                            child: TextFormField(
-                                              controller: _quantityController,
-                                              decoration: const InputDecoration(
-                                                labelText: 'Stock Initial',
-                                                prefixIcon: Icon(Icons.storage),
-                                                border: OutlineInputBorder(),
-                                              ),
-                                              keyboardType: TextInputType.number,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 15),
                                           Expanded(
                                             child: DropdownButtonFormField<String>(
                                               value: _category,
@@ -361,16 +320,19 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                                 description: _descriptionController.text,
                                 purchasePrice: double.tryParse(_purchasePriceController.text) ?? 0,
                                 sellingPrice: double.tryParse(_sellingPriceController.text) ?? 0,
-                                totalQuantity: int.tryParse(_quantityController.text) ?? 0,
+                                totalQuantity: 0, // Toujours 0 à la création, on passe par Achats
                                 category: _category,
                                 compteAchat: _selectedAccountAchat?.code ?? '60110000',
                                 compteVente: _selectedAccountVente?.code ?? '70110000',
                               );
-                              
+
+                              final currentUser = context.read<AppUser?>();
+                              final userName = currentUser?.displayName ?? 'Inconnu';
+
                               if (widget.product == null) {
-                                await service.addProduct(product, warehouseId: _selectedWarehouse?.id);
+                                await service.addProduct(product, userName);
                               } else {
-                                await service.updateProduct(product);
+                                await service.updateProduct(product, userName);
                               }
 
                               if (context.mounted) {

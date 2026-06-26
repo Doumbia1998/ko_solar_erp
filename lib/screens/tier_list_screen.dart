@@ -137,7 +137,7 @@ class _TierListScreenState extends State<TierListScreen> {
                                             if (canDelete)
                                               IconButton(
                                                 icon: const Icon(Icons.delete, color: Colors.red),
-                                                onPressed: () => _handleDeleteTier(context, firestoreService, tier, transactions, payments),
+                                                onPressed: () => _handleDeleteTier(context, firestoreService, tier, transactions, payments, currentUser?.displayName ?? 'Inconnu'),
                                               ),
                                           ],
                                         ),
@@ -181,7 +181,7 @@ class _TierListScreenState extends State<TierListScreen> {
     );
   }
 
-  void _handleDeleteTier(BuildContext context, FirestoreService service, Tier tier, List<AppTransaction> transactions, List<Payment> payments) {
+  void _handleDeleteTier(BuildContext context, FirestoreService service, Tier tier, List<AppTransaction> transactions, List<Payment> payments, String userName) {
     final hasTransactions = transactions.any((t) => t.tierId == tier.id);
     final hasPayments = payments.any((p) => p.tierId == tier.id);
 
@@ -197,7 +197,7 @@ class _TierListScreenState extends State<TierListScreen> {
         ),
       );
     } else {
-      _confirmDelete(context, () => service.deleteTier(tier.id));
+      _confirmDelete(context, () => service.deleteTier(tier.id, userName));
     }
   }
 

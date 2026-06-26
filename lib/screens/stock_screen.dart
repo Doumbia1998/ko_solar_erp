@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../services/firestore_service.dart';
 import '../models/product.dart';
 import '../models/warehouse.dart';
@@ -19,6 +20,8 @@ class StockScreen extends StatefulWidget {
 
 class _StockScreenState extends State<StockScreen> {
   String _searchQuery = "";
+  final NumberFormat _currencyFormat = NumberFormat('#,###', 'fr_FR');
+  String _alertFilter = "Tous"; // "Tous", "Rouge", "Orange", "Vert"
 
   @override
   Widget build(BuildContext context) {
@@ -31,6 +34,29 @@ class _StockScreenState extends State<StockScreen> {
         backgroundColor: const Color(0xFF1A237E),
         foregroundColor: Colors.white,
         actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.filter_list),
+            tooltip: 'Filtrer par alerte',
+            onSelected: (val) => setState(() => _alertFilter = val),
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: "Tous", child: Text("Tous les articles")),
+              PopupMenuItem(value: "Rouge", child: Row(children: [const Icon(Icons.circle, color: Colors.red, size: 12), const SizedBox(width: 10), const Text("Alerte Rouge (<= 2)")])),
+              PopupMenuItem(value: "Orange", child: Row(children: [const Icon(Icons.circle, color: Colors.orange, size: 12), const SizedBox(width: 10), const Text("Alerte Orange (<= 5)")])),
+              PopupMenuItem(value: "Vert", child: Row(children: [const Icon(Icons.circle, color: Colors.green, size: 12), const SizedBox(width: 10), const Text("Stock OK (> 10)")])),
+            ],
+          ),
+          IconButton(
+            icon: const Icon(Icons.sync),
+            tooltip: 'Synchroniser les stocks totaux',
+            onPressed: () async {
+              showDialog(context: context, barrierDismissible: false, builder: (context) => const Center(child: CircularProgressIndicator()));
+              await firestoreService.syncAllProductsTotalStock();
+              if (context.mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Stocks totaux synchronisés sur la base des dépôts !'), backgroundColor: Colors.green));
+              }
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.print_outlined),
             tooltip: 'Inventaire',
@@ -87,10 +113,38 @@ class _StockScreenState extends State<StockScreen> {
                                 final product = products[index];
                                 
                                 Map<String, int> stockMap = {};
+                                int calculatedTotal = 0;
                                 for (var s in allStocks) {
                                   if (s['productId'] == product.id) {
-                                    stockMap[s['warehouseId']] = (s['quantity'] as num?)?.toInt() ?? 0;
+                                    int qty = (s['quantity'] as num?)?.toInt() ?? 0;
+                                    stockMap[s['warehouseId']] = qty;
+                                    calculatedTotal += qty;
                                   }
+                                }
+
+                                // Calcul des alertes en vérifiant tous les dépôts existants
+                                bool hasRedAlert = false;
+                                bool hasOrangeAlert = false;
+
+                                for (var w in warehouses) {
+                                  int qty = stockMap[w.id] ?? 0;
+                                  if (qty <= 1) {
+                                    hasRedAlert = true;
+                                  } else if (qty <= 5) {
+                                    hasOrangeAlert = true;
+                                  }
+                                }
+
+                                // Application du filtre d'alerte (par dépôt désormais)
+                                if (_alertFilter == "Rouge" && !hasRedAlert) return const SizedBox.shrink();
+                                if (_alertFilter == "Orange" && !hasOrangeAlert) return const SizedBox.shrink();
+                                if (_alertFilter == "Vert" && (hasRedAlert || hasOrangeAlert)) return const SizedBox.shrink();
+
+                                Color badgeColor = Colors.green;
+                                if (hasRedAlert) {
+                                  badgeColor = Colors.red;
+                                } else if (hasOrangeAlert) {
+                                  badgeColor = Colors.orange;
                                 }
 
                                 return Card(
@@ -99,11 +153,11 @@ class _StockScreenState extends State<StockScreen> {
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                   child: ExpansionTile(
                                     leading: CircleAvatar(
-                                      backgroundColor: Colors.blue.shade50,
-                                      child: Text('${product.totalQuantity}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                      backgroundColor: badgeColor.withOpacity(0.1),
+                                      child: Text('$calculatedTotal', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: badgeColor)),
                                     ),
                                     title: Text(product.name.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                    subtitle: Text('Réf: ${product.reference} | PU: ${product.sellingPrice} FCFA', style: const TextStyle(fontSize: 12)),
+                                    subtitle: Text('Réf: ${product.reference} | PU Vente: ${_currencyFormat.format(product.sellingPrice)} F', style: const TextStyle(fontSize: 12)),
                                     children: [
                                       Padding(
                                         padding: const EdgeInsets.all(12.0),
@@ -112,6 +166,13 @@ class _StockScreenState extends State<StockScreen> {
                                             const Divider(),
                                             ...warehouses.map((w) {
                                               int qty = stockMap[w.id] ?? 0;
+                                              Color qtyColor = Colors.blue;
+                                              if (qty <= 2) {
+                                                qtyColor = Colors.red;
+                                              } else if (qty <= 5) {
+                                                qtyColor = Colors.orange;
+                                              }
+
                                               return Padding(
                                                 padding: const EdgeInsets.symmetric(vertical: 4),
                                                 child: Row(
@@ -124,7 +185,7 @@ class _StockScreenState extends State<StockScreen> {
                                                         Text(w.name, style: const TextStyle(fontSize: 13)),
                                                       ],
                                                     ),
-                                                    Text('$qty', style: TextStyle(fontWeight: FontWeight.bold, color: qty > 0 ? Colors.blue : Colors.red)),
+                                                    Text('$qty', style: TextStyle(fontWeight: FontWeight.bold, color: qtyColor)),
                                                   ],
                                                 ),
                                               );
@@ -240,6 +301,7 @@ class _StockScreenState extends State<StockScreen> {
   }
 
   void _confirmDelete(BuildContext context, FirestoreService service, Product p) {
+    final currentUser = Provider.of<AppUser?>(context, listen: false);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -250,7 +312,7 @@ class _StockScreenState extends State<StockScreen> {
           ElevatedButton(
             onPressed: () async {
               try {
-                await service.deleteProduct(p.id);
+                await service.deleteProduct(p.id, currentUser?.displayName ?? 'Inconnu');
                 if (context.mounted) {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Produit supprimé'), backgroundColor: Colors.green));
