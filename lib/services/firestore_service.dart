@@ -263,6 +263,24 @@ class FirestoreService {
         snap.docs.map((doc) => Task.fromMap(doc.data() as Map<String, dynamic>, doc.id)).toList());
   }
 
+  Future<String> getNextStockTransferRef() async {
+    final snap = await _db.collection('stock_transfers')
+        .where('reference', isGreaterThanOrEqualTo: 'MT26000000')
+        .where('reference', isLessThanOrEqualTo: 'MT26999999')
+        .orderBy('reference', descending: true)
+        .limit(1)
+        .get();
+
+    if (snap.docs.isEmpty) {
+      return 'MT26000001';
+    }
+
+    final lastRef = snap.docs.first.data()['reference'] as String;
+    final lastNum = int.tryParse(lastRef.replaceAll('MT', '')) ?? 26000000;
+    final nextNum = lastNum + 1;
+    return 'MT${nextNum.toString().padLeft(8, '0')}';
+  }
+
   Future<void> addTask(Task task) => _db.collection('tasks').add(task.toMap());
 
   Future<void> updateTaskStatus(String taskId, TaskStatus status, String userName, {Map<String, dynamic>? reportData}) {
@@ -280,11 +298,12 @@ class FirestoreService {
     return _db.collection('tasks').doc(taskId).update(data);
   }
 
-  Future<void> approveTask(String taskId, String managerName, String comment, bool isApproved) {
+  Future<void> approveTask(String taskId, String managerName, String comment, bool isApproved, {String? supervisorSignature}) {
     return _db.collection('tasks').doc(taskId).update({
       'status': isApproved ? 'approved' : 'rejected',
       'managerComment': comment,
       'approvedBy': managerName,
+      'supervisorSignature': supervisorSignature,
       'updatedAt': Timestamp.now(),
     });
   }
@@ -964,7 +983,13 @@ class FirestoreService {
   Future<void> deleteAccount(String id) => _db.collection('accounts').doc(id).delete();
 
   Future<void> updateTransactionStatus(String id, bool isPosted) => _db.collection('transactions').doc(id).update({'isPosted': isPosted});
-  Future<void> updateDeliveryStatus(String id, String status) => _db.collection('transactions').doc(id).update({'deliveryStatus': status});
+  Future<void> updateDeliveryStatus(String id, String status) {
+    Map<String, dynamic> data = {'deliveryStatus': status};
+    if (status == 'delivered') {
+      data['deliveredAt'] = Timestamp.now();
+    }
+    return _db.collection('transactions').doc(id).update(data);
+  }
 
   Future<void> convertQuoteToSale(AppTransaction quote, String userName) async {
     WriteBatch batch = _db.batch();

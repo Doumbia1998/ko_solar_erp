@@ -287,7 +287,7 @@ class ReportService {
                 padding: const pw.EdgeInsets.symmetric(vertical: 2, horizontal: 5),
                 child: pw.Row(
                   children: [
-                    pw.Text('Total  Facture cpta', style: const pw.TextStyle(fontSize: 9, fontStyle: pw.FontStyle.italic)),
+                    pw.Text('Total  Facture cpta', style: pw.TextStyle(fontSize: 9, fontStyle: pw.FontStyle.italic)),
                     pw.Spacer(),
                     pw.Text(_format.format(t.totalHT), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
                   ]
@@ -394,7 +394,7 @@ class ReportService {
     await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
   }
 
-  static Future<void> generateDailyDeliveryReport(List<AppTransaction> txs) async {
+  static Future<void> generateDailyDeliveryReport(List<AppTransaction> txs, {String title = "RAPPORT JOURNALIER DES LIVRAISONS"}) async {
     final pdf = pw.Document();
     final dateStr = DateFormat('dd/MM/yyyy').format(DateTime.now());
 
@@ -405,35 +405,35 @@ class ReportService {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.SizedBox(width: 80, child: pw.Text('K-O SOLAR', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10))),
-                pw.Text(dateStr),
+                pw.SizedBox(width: 80, child: pw.Text('K-O SOLAR', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10, color: PdfColor.fromHex('#FF8F00')))),
+                pw.Text(dateStr, style: const pw.TextStyle(fontSize: 10)),
               ],
             ),
             pw.SizedBox(height: 5),
-            pw.Row(
-              children: [
-                pw.Text('K-O SOLAR - ETAT DES LIVRAISONS (BL)', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
-              ]
-            ),
             pw.Divider(),
           ]
         ),
         build: (pw.Context context) => [
           pw.SizedBox(height: 20),
-          pw.Center(child: pw.Text('RAPPORT JOURNALIER DES LIVRAISONS', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold))),
+          pw.Center(child: pw.Text(title.toUpperCase(), style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold))),
           pw.SizedBox(height: 20),
           pw.TableHelper.fromTextArray(
-            headers: ['N° BL', 'Client', 'Destination', 'Statut'],
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+            headers: ['N° BL', 'Client', 'Destination', 'Facture le', 'Livre le'],
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10, color: PdfColors.white),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.blueGrey900),
+            cellStyle: const pw.TextStyle(fontSize: 9),
             data: txs.map((t) => [
               'BL-${t.invoiceNumber}',
               t.tierName.toUpperCase(),
               t.destination,
-              t.deliveryStatus == 'delivered' ? 'LIVRE' : 'EN ATTENTE',
+              DateFormat('dd/MM/yy').format(t.date),
+              t.deliveredAt != null ? DateFormat('dd/MM/yy HH:mm').format(t.deliveredAt!) : 'EN ATTENTE',
             ]).toList(),
           ),
           pw.SizedBox(height: 30),
-          pw.Text('RESUME : ${txs.where((t) => t.deliveryStatus == 'delivered').length} Livres / ${txs.where((t) => t.deliveryStatus != 'delivered').length} En attente', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+          pw.Text('Résumé : ${txs.where((t) => t.deliveryStatus == 'delivered').length} Livrés / ${txs.where((t) => t.deliveryStatus != 'delivered').length} En attente', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
+          pw.Spacer(),
+          pw.Align(alignment: pw.Alignment.centerRight, child: pw.Text('Développé par MLD Consulting', style: pw.TextStyle(fontSize: 7, fontStyle: pw.FontStyle.italic, color: PdfColors.grey600))),
         ],
       ),
     );

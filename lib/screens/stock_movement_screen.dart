@@ -23,21 +23,49 @@ class _StockMovementScreenState extends State<StockMovementScreen> {
 
   void _printDetailedReport(FirestoreService service) async {
     final products = await service.getProducts().first;
-    final transactions = await service.getTransactions().first;
-    final transfers = await service.getStockTransfers().first;
+    final allTransactions = await service.getTransactions().first;
+    final allTransfers = await service.getStockTransfers().first;
+    final allStocks = await service.getAllStocks().first;
 
     List<Product> targetProducts = products;
     if (_selectedProduct != null) {
       targetProducts = [products.firstWhere((p) => p.id == _selectedProduct!.id)];
     }
 
+    // Filtrer les transactions par dépôt si nécessaire
+    List<AppTransaction> filteredTransactions = allTransactions;
+    if (_selectedWarehouse != null) {
+      filteredTransactions = allTransactions.where((t) => t.warehouseId == _selectedWarehouse!.id).toList();
+    }
+
+    // Filtrer les transferts par dépôt si nécessaire
+    List<StockTransfer> filteredTransfers = allTransfers;
+    if (_selectedWarehouse != null) {
+      filteredTransfers = allTransfers.where((tr) =>
+        tr.fromWarehouseId == _selectedWarehouse!.id ||
+        tr.toWarehouseId == _selectedWarehouse!.id
+      ).toList();
+    }
+
+    // Préparer les stocks actuels par produit pour le dépôt sélectionné
+    Map<String, int> currentWarehouseStocks = {};
+    if (_selectedWarehouse != null) {
+      for (var s in allStocks) {
+        if (s['warehouseId'] == _selectedWarehouse!.id) {
+          currentWarehouseStocks[s['productId']] = (s['quantity'] as num).toInt();
+        }
+      }
+    }
+
     await PdfService.generateDetailedStockMovementReport(
       products: targetProducts,
-      transactions: transactions,
-      transfers: transfers,
+      transactions: filteredTransactions,
+      transfers: filteredTransfers,
       start: _startDate,
       end: _endDate,
+      warehouseId: _selectedWarehouse?.id,
       warehouseName: _selectedWarehouse?.name,
+      warehouseStocks: _selectedWarehouse != null ? currentWarehouseStocks : null,
     );
   }
 

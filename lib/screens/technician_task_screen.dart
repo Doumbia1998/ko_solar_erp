@@ -35,8 +35,11 @@ class _TechnicianTaskScreenState extends State<TechnicianTaskScreen> {
       body: StreamBuilder<List<Task>>(
         stream: service.getTasks(technicianId: currentUser.uid),
         builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(child: Text('Erreur de chargement : ${snapshot.error}', style: const TextStyle(color: Colors.red)));
+          }
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-          final tasks = snapshot.data!.toList();
+          final tasks = snapshot.data!.toList()..sort((a, b) => b.assignedAt.compareTo(a.assignedAt));
 
           // Ajout : Si l'utilisateur est Responsable Technique, il voit tout ici aussi ?
           // Non, l'écran est "Mes Chantiers". S'il veut tout voir il va dans "Suivi" du menu Dashboard.
@@ -243,12 +246,19 @@ class _TechnicianTaskScreenState extends State<TechnicianTaskScreen> {
                     final data = await clientSignController.toPngBytes();
                     if (data != null) {
                       clientSignBase64 = base64Encode(data);
-                      // RÉCUPÉRATION SILENCIEUSE DE LA LOCALISATION
+                      // RÉCUPÉRATION SILENCIEUSE ET AUTOMATIQUE DE LA LOCALISATION (ITINÉRAIRE)
                       try {
-                        Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+                        Position position = await Geolocator.getCurrentPosition(
+                          desiredAccuracy: LocationAccuracy.best,
+                          timeLimit: const Duration(seconds: 10)
+                        );
                         signatureGps = "${position.latitude}, ${position.longitude}";
+                        debugPrint('GPS Captured: $signatureGps');
                       } catch (e) {
                         debugPrint('GPS Silent Error: $e');
+                        // On essaie la dernière position connue si la lecture directe échoue (vitesse)
+                        Position? lastPos = await Geolocator.getLastKnownPosition();
+                        if (lastPos != null) signatureGps = "${lastPos.latitude}, ${lastPos.longitude} (Last Known)";
                       }
                     }
                   }

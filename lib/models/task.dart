@@ -46,6 +46,10 @@ class Task {
     this.completedAt,
     this.siteLocation,
     this.gpsLocation,
+    this.signatureGps,
+    this.clientSignature,
+    this.technicianSignature,
+    this.supervisorSignature,
     this.managerComment,
     this.approvedBy,
     this.updatedAt,
@@ -77,6 +81,12 @@ class Task {
   }
 
   factory Task.fromMap(Map<String, dynamic> map, String id) {
+    DateTime parseDate(dynamic value) {
+      if (value is Timestamp) return value.toDate();
+      if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+      return DateTime.now();
+    }
+
     return Task(
       id: id,
       transactionId: map['transactionId'] ?? '',
@@ -85,14 +95,20 @@ class Task {
       technicianId: map['technicianId'] ?? '',
       technicianName: map['technicianName'] ?? '',
       assignedBy: map['assignedBy'] ?? '',
-      assignedAt: (map['assignedAt'] as Timestamp).toDate(),
+      assignedAt: parseDate(map['assignedAt']),
       status: TaskStatus.values.firstWhere(
         (e) => e.toString().split('.').last == map['status'],
         orElse: () => TaskStatus.pending,
       ),
       reportDescription: map['reportDescription'],
-      usedProducts: (map['usedProducts'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList(),
-      completedAt: map['completedAt'] != null ? (map['completedAt'] as Timestamp).toDate() : null,
+      usedProducts: (map['usedProducts'] as List?)?.map((e) {
+        try {
+          return Map<String, dynamic>.from(e as Map);
+        } catch (err) {
+          return <String, dynamic>{};
+        }
+      }).toList(),
+      completedAt: map['completedAt'] != null ? parseDate(map['completedAt']) : null,
       siteLocation: map['siteLocation'],
       gpsLocation: map['gpsLocation'],
       signatureGps: map['signatureGps'],
@@ -101,7 +117,7 @@ class Task {
       supervisorSignature: map['supervisorSignature'],
       managerComment: map['managerComment'],
       approvedBy: map['approvedBy'],
-      updatedAt: map['updatedAt'] != null ? (map['updatedAt'] as Timestamp).toDate() : null,
+      updatedAt: map['updatedAt'] != null ? parseDate(map['updatedAt']) : null,
     );
   }
 }

@@ -6,6 +6,8 @@ import '../models/transaction.dart';
 import '../models/app_user.dart';
 import '../models/task.dart';
 import '../services/pdf_service.dart';
+import 'package:signature/signature.dart';
+import 'dart:convert';
 
 class TaskAssignmentScreen extends StatefulWidget {
   const TaskAssignmentScreen({super.key});
@@ -99,6 +101,9 @@ class _TaskAssignmentScreenState extends State<TaskAssignmentScreen> with Single
     return StreamBuilder<List<Task>>(
       stream: service.getTasks(),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(child: Text('Erreur de chargement des tâches : ${snapshot.error}', style: const TextStyle(color: Colors.red)));
+        }
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
         final tasks = snapshot.data!;
 
@@ -129,7 +134,7 @@ class _TaskAssignmentScreenState extends State<TaskAssignmentScreen> with Single
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text('Lieu : ${task.siteLocation ?? 'Non renseigné'}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                            Text('GPS : ${task.gpsLocation ?? 'Non renseigné'}', style: const TextStyle(fontSize: 11)),
+                            const Icon(Icons.location_on, color: Colors.grey, size: 16),
                           ],
                         ),
                         const SizedBox(height: 5),
@@ -239,26 +244,43 @@ class _TaskAssignmentScreenState extends State<TaskAssignmentScreen> with Single
 
   void _showApproveDialog(BuildContext context, FirestoreService service, Task task, String managerName) {
     final commentCtrl = TextEditingController(text: task.managerComment);
+    final supervisorSignController = SignatureController(penStrokeWidth: 3, penColor: Colors.black);
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Validation du Responsable'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Veuillez donner votre avis sur les travaux effectués par le technicien.', style: TextStyle(fontSize: 12)),
-            const SizedBox(height: 10),
-            TextField(
-              controller: commentCtrl,
-              decoration: const InputDecoration(labelText: 'Commentaire / Observation', border: OutlineInputBorder()),
-              maxLines: 4
-            ),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Veuillez donner votre avis sur les travaux effectués par le technicien.', style: TextStyle(fontSize: 12)),
+              const SizedBox(height: 10),
+              TextField(
+                controller: commentCtrl,
+                decoration: const InputDecoration(labelText: 'Commentaire / Observation', border: OutlineInputBorder()),
+                maxLines: 4
+              ),
+              const SizedBox(height: 20),
+              const Text('SIGNATURE DU RESPONSABLE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              const SizedBox(height: 5),
+              Container(
+                decoration: BoxDecoration(border: Border.all(color: Colors.grey)),
+                child: Signature(controller: supervisorSignController, height: 100, backgroundColor: Colors.white),
+              ),
+              TextButton(onPressed: () => supervisorSignController.clear(), child: const Text('Effacer Signature')),
+            ],
+          ),
         ),
         actions: [
           ElevatedButton(
             onPressed: () async {
-              await service.approveTask(task.id, managerName, commentCtrl.text, false);
+              String? supervisorSignBase64;
+              if (supervisorSignController.isNotEmpty) {
+                final data = await supervisorSignController.toPngBytes();
+                if (data != null) supervisorSignBase64 = base64Encode(data);
+              }
+              await service.approveTask(task.id, managerName, commentCtrl.text, false, supervisorSignature: supervisorSignBase64);
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rapport rejeté pour correction.'), backgroundColor: Colors.red));
             },
@@ -267,7 +289,12 @@ class _TaskAssignmentScreenState extends State<TaskAssignmentScreen> with Single
           ),
           ElevatedButton(
             onPressed: () async {
-              await service.approveTask(task.id, managerName, commentCtrl.text, true);
+              String? supervisorSignBase64;
+              if (supervisorSignController.isNotEmpty) {
+                final data = await supervisorSignController.toPngBytes();
+                if (data != null) supervisorSignBase64 = base64Encode(data);
+              }
+              await service.approveTask(task.id, managerName, commentCtrl.text, true, supervisorSignature: supervisorSignBase64);
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chantier approuvé et archivé !'), backgroundColor: Colors.green));
             },

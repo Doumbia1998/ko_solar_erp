@@ -7,7 +7,8 @@ import '../services/pdf_service.dart';
 import '../services/report_service.dart';
 
 class DeliveryListScreen extends StatefulWidget {
-  const DeliveryListScreen({super.key});
+  final int initialTab;
+  const DeliveryListScreen({super.key, this.initialTab = 0});
 
   @override
   State<DeliveryListScreen> createState() => _DeliveryListScreenState();
@@ -16,11 +17,20 @@ class DeliveryListScreen extends StatefulWidget {
 class _DeliveryListScreenState extends State<DeliveryListScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   String _search = "";
+  DateTime? _filterDate;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 2, vsync: this, initialIndex: widget.initialTab);
+  }
+
+  @override
+  void didUpdateWidget(DeliveryListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialTab != oldWidget.initialTab) {
+      _tabController.animateTo(widget.initialTab);
+    }
   }
 
   @override
@@ -34,10 +44,35 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> with SingleTick
         foregroundColor: Colors.white,
         actions: [
           IconButton(
-            icon: const Icon(Icons.picture_as_pdf),
-            tooltip: 'Rapport Journalier des Livraisons',
+            icon: Icon(Icons.event, color: _filterDate != null ? Colors.yellow : Colors.white),
+            tooltip: 'Filtrer par date de livraison',
+            onPressed: () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: _filterDate ?? DateTime.now(),
+                firstDate: DateTime(2023),
+                lastDate: DateTime.now(),
+                locale: const Locale('fr', 'FR'),
+              );
+              if (picked != null) setState(() => _filterDate = picked);
+            },
+          ),
+          if (_filterDate != null)
+            IconButton(
+              icon: const Icon(Icons.clear, color: Colors.redAccent),
+              onPressed: () => setState(() => _filterDate = null),
+            ),
+          TextButton.icon(
+            icon: const Icon(Icons.check_circle_outline, color: Colors.greenAccent),
+            label: const Text('RAPP. LIVRÉS', style: TextStyle(color: Colors.white, fontSize: 10)),
             onPressed: () => _generateDailyDeliveryReport(service),
           ),
+          TextButton.icon(
+            icon: const Icon(Icons.pending_outlined, color: Colors.orangeAccent),
+            label: const Text('RAPP. ATTENTES', style: TextStyle(color: Colors.white, fontSize: 10)),
+            onPressed: () => _generatePendingDeliveryReport(service),
+          ),
+          const SizedBox(width: 10),
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -86,6 +121,16 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> with SingleTick
 
         var list = snapshot.data!.where((t) => t.deliveryStatus == status).toList();
 
+        // Filtrage par date pour l'onglet "Déjà Livré"
+        if (status == 'delivered' && _filterDate != null) {
+          list = list.where((t) =>
+            t.deliveredAt != null &&
+            t.deliveredAt!.year == _filterDate!.year &&
+            t.deliveredAt!.month == _filterDate!.month &&
+            t.deliveredAt!.day == _filterDate!.day
+          ).toList();
+        }
+
         if (_search.isNotEmpty) {
           list = list.where((t) =>
             t.tierName.toLowerCase().contains(_search) ||
@@ -113,7 +158,10 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> with SingleTick
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Date: ${DateFormat('dd/MM/yyyy').format(t.date)}\nArticles: ${t.items.length}'),
+                    Text('Facturé le: ${DateFormat('dd/MM/yyyy').format(t.date)}\nArticles: ${t.items.length}'),
+                    if (status == 'delivered' && t.deliveredAt != null)
+                      Text('Livré le: ${DateFormat('dd/MM/yyyy HH:mm').format(t.deliveredAt!)}',
+                        style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 11)),
                     if (t.createdBy.isNotEmpty)
                       Text('Fait par: ${t.createdBy}', style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.blueGrey)),
                   ],
@@ -163,17 +211,49 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> with SingleTick
   }
 
   void _generateDailyDeliveryReport(FirestoreService service) async {
-    final txs = await service.getTransactions(type: TransactionType.sale).first;
-    final now = DateTime.now();
-    final todayTxs = txs.where((t) =>
-      t.date.year == now.year && t.date.month == now.month && t.date.day == now.day
-    ).toList();
+    DateTime? reportDate = _filterDate;
 
-    if (todayTxs.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Aucune livraison enregistrée aujourd\'hui.')));
+    if (reportDate == null) {
+      final DateTime? picked = await showDatePicker(
+        context: context,
+        initialDate: DateTime.now(),
+        firstDate: DateTime(2023),
+        lastDate: DateTime.now(),
+      );
+      if (picked == null) return;
+      reportDate = picked;
+    }
+
+    final txs = await service.getTransactions(type: TransactionType.sale).first;
+    final targetTxs = txs.where((t) {
+      if (t.deliveryStatus != 'delivered' || t.deliveredAt == null) return false;
+      final dDate = t.deliveredAt!.toLocal();
+      return dDate.year == reportDate!.year &&
+             dDate.month == reportDate.month &&
+             dDate.day == reportDate.day;
+    }).toList();
+
+    if (targetTxs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Aucune livraison validée le ${DateFormat('dd/MM/yyyy').format(reportDate)}.'),
+        backgroundColor: Colors.orange,
+      ));
       return;
     }
 
-    ReportService.generateDailyDeliveryReport(todayTxs);
+    ReportService.generateDailyDeliveryReport(targetTxs,
+      title: "LIVRAISONS EFFECTUÉES LE ${DateFormat('dd/MM/yyyy').format(reportDate)}");
+  }
+
+  void _generatePendingDeliveryReport(FirestoreService service) async {
+    final txs = await service.getTransactions(type: TransactionType.sale).first;
+    final pendingTxs = txs.where((t) => t.deliveryStatus == 'pending').toList();
+
+    if (pendingTxs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Aucune livraison en attente.')));
+      return;
+    }
+
+    ReportService.generateDailyDeliveryReport(pendingTxs, title: "LIVRAISONS EN ATTENTE (NON LIVRÉES)");
   }
 }

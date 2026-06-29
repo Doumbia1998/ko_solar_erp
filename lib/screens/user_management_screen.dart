@@ -19,6 +19,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   final _nameController = TextEditingController();
   UserRole _selectedRole = UserRole.employee;
   String? _selectedWarehouseId;
+  String _searchQuery = '';
 
   // États des permissions
   bool _canViewPurchases = false;
@@ -64,6 +65,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   bool _canManageWarehouses = false;
   bool _canManageTasks = false;
   bool _canViewStockMovements = false;
+  bool _canSuperviseTasks = false;
 
   @override
   Widget build(BuildContext context) {
@@ -77,56 +79,146 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
           const SizedBox(width: 10),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('users').snapshots(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-          final users = snapshot.data!.docs;
+      body: Column(
+        children: [
+          // Barre de Vue / Recherche
+          Container(
+            padding: const EdgeInsets.all(16.0),
+            color: Colors.grey.shade100,
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    onChanged: (value) => setState(() => _searchQuery = value.toLowerCase()),
+                    decoration: InputDecoration(
+                      hintText: 'Rechercher un membre...',
+                      prefixIcon: const Icon(Icons.search, color: Color(0xFF1A237E)),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 15),
+                ElevatedButton.icon(
+                  onPressed: () => _showAddUserDialog(context),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Ajouter Membre', style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1A237E),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ],
+            ),
+          ),
 
-          return ListView.builder(
-            itemCount: users.length,
-            itemBuilder: (context, index) {
-              final userDoc = users[index];
-              final userData = userDoc.data() as Map<String, dynamic>;
-              final role = userData['role'] ?? 'employee';
-              final appUser = AppUser.fromMap(userData);
-              
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: _getRoleColor(role),
-                  child: const Icon(Icons.person, color: Colors.white),
-                ),
-                title: Text(userData['displayName']?.toString().toUpperCase() ?? ''),
-                subtitle: Text("${userData['email']}\nRôle: ${role.toString().toUpperCase()}"),
-                isThreeLine: true,
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.edit, color: Colors.blue),
-                      onPressed: () => _showEditUserDialog(context, appUser),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.lock_reset, color: Colors.orange),
-                      tooltip: 'Réinitialiser le mot de passe',
-                      onPressed: () => _resetUserPassword(context, userData['email']),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () => _confirmDeleteUser(context, userDoc.id, userData['displayName'] ?? ''),
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddUserDialog(context),
-        backgroundColor: const Color(0xFF1A237E),
-        icon: const Icon(Icons.person_add, color: Colors.white),
-        label: const Text('Ajouter Membre', style: TextStyle(color: Colors.white)),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('users').snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) return Center(child: Text('Erreur: ${snapshot.error}'));
+                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+
+                var users = snapshot.data!.docs;
+
+                // Filtrage
+                if (_searchQuery.isNotEmpty) {
+                  users = users.where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final name = (data['displayName'] ?? '').toString().toLowerCase();
+                    final email = (data['email'] ?? '').toString().toLowerCase();
+                    return name.contains(_searchQuery) || email.contains(_searchQuery);
+                  }).toList();
+                }
+
+                if (users.isEmpty) {
+                  return const Center(
+                    child: Text('Aucun membre trouvé.', style: TextStyle(color: Colors.grey)),
+                  );
+                }
+
+                return ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  itemCount: users.length,
+                  itemBuilder: (context, index) {
+                    final userDoc = users[index];
+                    final userData = userDoc.data() as Map<String, dynamic>;
+                    final role = userData['role'] ?? 'employee';
+                    final appUser = AppUser.fromMap(userData);
+
+                    return Card(
+                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        leading: CircleAvatar(
+                          radius: 25,
+                          backgroundColor: _getRoleColor(role).withOpacity(0.1),
+                          child: Icon(Icons.person, color: _getRoleColor(role), size: 30),
+                        ),
+                        title: Text(
+                          userData['displayName']?.toString().toUpperCase() ?? 'SANS NOM',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 4),
+                            Text(userData['email'] ?? '', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: _getRoleColor(role).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                role.toString().toUpperCase(),
+                                style: TextStyle(color: _getRoleColor(role), fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ),
+                        trailing: Wrap(
+                          spacing: 0,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit, color: Colors.blue, size: 22),
+                              onPressed: () => _showEditUserDialog(context, appUser),
+                              tooltip: 'Modifier',
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.lock_reset, color: Colors.orange, size: 22),
+                              tooltip: 'Réinitialiser',
+                              onPressed: () => _resetUserPassword(context, userData['email']),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red, size: 22),
+                              onPressed: () => _confirmDeleteUser(context, userDoc.id, userData['displayName'] ?? ''),
+                              tooltip: 'Supprimer',
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -294,6 +386,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     _canManageWarehouses = user.canManageWarehouses;
     _canManageTasks = user.canManageTasks;
     _canViewStockMovements = user.canViewStockMovements;
+    _canSuperviseTasks = user.canSuperviseTasks;
 
     final service = context.read<FirestoreService>();
 
@@ -312,7 +405,15 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 DropdownButton<UserRole>(
                   isExpanded: true,
                   value: _selectedRole,
-                  items: UserRole.values.map((role) {
+                  items: [
+                    UserRole.admin,
+                    UserRole.manager,
+                    UserRole.employee,
+                    UserRole.storekeeper,
+                    UserRole.technician,
+                    UserRole.tech_manager,
+                    UserRole.supervisor,
+                  ].map((role) {
                     return DropdownMenuItem(value: role, child: Text(role.toString().split('.').last.toUpperCase()));
                   }).toList(),
                   onChanged: (val) => setDialogState(() => _selectedRole = val!),
@@ -445,6 +546,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                   canManageWarehouses: _canManageWarehouses,
                   canManageTasks: _canManageTasks,
                   canViewStockMovements: _canViewStockMovements,
+                  canSuperviseTasks: _canSuperviseTasks,
                 );
                 await FirebaseFirestore.instance.collection('users').doc(user.uid).set(updatedUser.toMap());
                 Navigator.pop(context);
@@ -487,7 +589,15 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 DropdownButton<UserRole>(
                   isExpanded: true,
                   value: _selectedRole,
-                  items: UserRole.values.map((role) {
+                  items: [
+                    UserRole.admin,
+                    UserRole.manager,
+                    UserRole.employee,
+                    UserRole.storekeeper,
+                    UserRole.technician,
+                    UserRole.tech_manager,
+                    UserRole.supervisor,
+                  ].map((role) {
                     return DropdownMenuItem(
                       value: role, 
                       child: Text(role.toString().split('.').last.toUpperCase())

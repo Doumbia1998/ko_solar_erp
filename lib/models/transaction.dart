@@ -57,6 +57,7 @@ class AppTransaction {
   final bool addTransport; // true = ajouter, false = soustraire
   final bool isPosted; // statut comptabilisation
   final String deliveryStatus; // 'pending', 'delivered'
+  final DateTime? deliveredAt; // Date réelle de livraison
   final String createdBy; // Nom de l'utilisateur
 
   AppTransaction({
@@ -77,6 +78,7 @@ class AppTransaction {
     this.addTransport = true,
     this.isPosted = false,
     this.deliveryStatus = 'pending',
+    this.deliveredAt,
     this.createdBy = '',
   });
 
@@ -110,6 +112,7 @@ class AppTransaction {
       'addTransport': addTransport,
       'isPosted': isPosted,
       'deliveryStatus': deliveryStatus,
+      'deliveredAt': deliveredAt != null ? Timestamp.fromDate(deliveredAt!) : null,
       'createdBy': createdBy,
     };
   }
@@ -147,6 +150,7 @@ class AppTransaction {
       addTransport: map['addTransport'] ?? true,
       isPosted: map['isPosted'] ?? false,
       deliveryStatus: map['deliveryStatus'] ?? 'pending',
+      deliveredAt: map['deliveredAt'] != null ? (map['deliveredAt'] as Timestamp).toDate() : null,
       createdBy: map['createdBy'] ?? '',
     );
   }

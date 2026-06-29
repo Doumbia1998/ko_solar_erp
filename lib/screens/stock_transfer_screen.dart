@@ -25,7 +25,7 @@ class _StockTransferScreenState extends State<StockTransferScreen> with SingleTi
   final _qtyController = TextEditingController();
   Product? _selectedProduct;
 
-  final _refController = TextEditingController(text: 'MT${DateFormat('ddMMyyHHmm').format(DateTime.now())}');
+  final _refController = TextEditingController();
   bool _isProcessing = false;
 
   // Filtres pour l'historique
@@ -38,6 +38,15 @@ class _StockTransferScreenState extends State<StockTransferScreen> with SingleTi
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _loadNextRef();
+  }
+
+  void _loadNextRef() async {
+    final service = Provider.of<FirestoreService>(context, listen: false);
+    String nextRef = await service.getNextStockTransferRef();
+    setState(() {
+      _refController.text = nextRef;
+    });
   }
 
   @override
@@ -454,8 +463,8 @@ class _StockTransferScreenState extends State<StockTransferScreen> with SingleTi
           _items.clear();
           _fromWarehouse = null;
           _toWarehouse = null;
-          _refController.text = 'MT${DateFormat('ddMMyyHHmm').format(DateTime.now())}';
         });
+        _loadNextRef(); // Charger le nouveau numéro séquentiel
         _tabController.animateTo(1); // Aller à l'historique
       }
     } catch (e) {
